@@ -1,20 +1,34 @@
-<!-- last_verified: 2026-06-02 -->
+<!-- last_verified: 2026-06-03 -->
 # AI Audiobook Generator
 
 Turn a long manuscript — a book, an ebook, a blog series, or any pasted text —
 into a narrated, chapterized audiobook, with the **source text, every per-chapter
 audio render, and the final master all stored in a single [Backblaze B2](https://www.backblaze.com/sign-up/ai-cloud-storage?utm_source=github&utm_medium=referral&utm_campaign=ai_artifacts&utm_content=b2ai-audiobook-generator) bucket**.
 
-It is a deliberately strong B2 demo because audiobooks are big, persistent,
-multi-artifact AI workloads. This app exercises:
+This app exercises:
 
 - **Long-running generation jobs** — chapters are narrated one by one in the background.
 - **Many-object writes under a per-book prefix** — source, manifest, N chapter MP3s, and a master.
 - **B2 as the sole datastore** — a JSON manifest per book; there is no database.
 - **Streaming / Range reads** — the browser plays chapter audio straight from presigned B2 URLs.
 
-> Screenshots are coming. The app ships with a full dashboard, a New Audiobook
-> studio, and a Library with an inline player — run it locally to see them.
+## Screenshots
+
+**Dashboard** — audiobook + narration metrics, a 7-day audio-hours chart, and recent books.
+
+![Dashboard with audiobook and narration metrics](docs/images/dashboard.png)
+
+**New Audiobook studio** — paste or upload a manuscript and preview detected chapters live, then pick a narrator voice.
+
+![New Audiobook studio with live chapter detection](docs/images/create.png)
+
+**Library (inline player)** — stream each chapter from a presigned B2 URL and download the chapterized M4B master.
+
+![Library detail with inline chapter player](docs/images/library-detail.png)
+
+**Library** — every audiobook, scoped to the `audiobooks/` prefix.
+
+![Library grid of audiobooks](docs/images/library.png)
 
 ## What you get
 
