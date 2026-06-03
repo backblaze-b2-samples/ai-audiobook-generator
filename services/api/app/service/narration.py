@@ -72,6 +72,23 @@ def _touch(book: Book) -> None:
     books_service.save_manifest(book)
 
 
+def _repopulate_chapter_text(book: Book) -> None:
+    """Restore per-chapter text from the durable source.txt.
+
+    The manifest excludes chapter text (it lives only in source.txt), so a
+    book loaded from the manifest has empty `chapter.text`. Re-read the
+    manuscript and re-run the deterministic split, matching by contiguous
+    index, so synthesize() receives the real chapter text rather than "".
+    """
+    raw = read_object(books_service.source_key(book.id))
+    if raw is None:
+        raise TTSError(f"Source manuscript missing for book {book.id}.")
+    source_chapters = split_into_chapters(raw.decode("utf-8"))
+    by_index = {c.index: c.text for c in source_chapters}
+    for chapter in book.chapters:
+        chapter.text = by_index.get(chapter.index, "")
+
+
 def run_narration(book_id: str) -> None:
     """Render every chapter, then assemble the master. Idempotent-ish: re-runs
     skip chapters already marked complete."""
@@ -83,6 +100,7 @@ def run_narration(book_id: str) -> None:
     _touch(book)
 
     try:
+        _repopulate_chapter_text(book)
         for chapter in book.chapters:
             if chapter.status == NarrationStatus.COMPLETE and chapter.audio_key:
                 continue

@@ -1,4 +1,4 @@
-<!-- last_verified: 2026-06-02 -->
+<!-- last_verified: 2026-06-03 -->
 # Feature: Chapter Narration
 
 ## Purpose
@@ -32,8 +32,10 @@ chapter with a TTS provider, and assemble a final master — all stored in B2.
 ## Flow
 - `POST /books` → split into chapters, pick voice, write `source.txt` + initial
   manifest (status `pending`), return `202`, schedule `run_narration` in the background
-- `run_narration`: status `rendering` → per chapter: `synthesize` → write MP3 → read
-  duration (mutagen) → rewrite manifest
+- `run_narration`: status `rendering` → repopulate each chapter's text by re-reading
+  `source.txt` and re-running the deterministic `split_into_chapters` (the manifest
+  excludes chapter `text`, so it is `""` after a manifest reload) → per chapter:
+  `synthesize` → write MP3 → read duration (mutagen) → rewrite manifest
 - All chapters done → status `assembling` → assemble M4B → write `master.m4b` →
   status `complete`
 - A single narrator voice narrates the whole book (multi-voice is out of scope for v1)
@@ -43,6 +45,7 @@ chapter with a TTS provider, and assemble a final master — all stored in B2.
 - Missing/invalid TTS key → `502` on create or chapter marked failed at render time
 - TTS failure mid-job → book status `failed` with the error recorded in the manifest
 - ffmpeg missing → chapters still complete; book is `complete` with a "master skipped" note
+- Missing `source.txt` at narration time → book status `failed` (text cannot be repopulated)
 - Server restart → in-flight job is lost (chapters already in B2 survive; see RELIABILITY)
 
 ## UX States
@@ -51,7 +54,9 @@ chapter with a TTS provider, and assemble a final master — all stored in B2.
 
 ## Verification
 - Test files: `services/api/tests/test_narration.py`, `services/api/tests/test_chapters.py`, `services/api/tests/test_books.py`
-- Required cases: create writes source+manifest, full render+master, TTS failure → failed, voice listing
+- Required cases: create writes source+manifest, full render+master, chapter text
+  repopulated from source.txt before synthesize (non-empty), missing source → failed,
+  TTS failure → failed, voice listing
 - Quick verify command: `pnpm test:api`
 - Full verify command: `pnpm lint && pnpm lint:api && pnpm test:api && pnpm check:structure`
 - Pass criteria: pytest green, ruff clean

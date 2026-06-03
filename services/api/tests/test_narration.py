@@ -15,6 +15,13 @@ class FakeProvider(TTSProvider):
         return "alloy"
 
     def synthesize(self, text, voice_id):
+        # Mirror the real provider's contract: empty input is rejected. This
+        # guards against the manifest-reload regression where chapter.text was
+        # "" because it is excluded from manifest.json.
+        if not text:
+            from app.repo.tts.base import TTSError
+
+            raise TTSError("empty TTS input")
         return f"AUDIO[{voice_id}]:{text[:8]}".encode()
 
 
@@ -71,6 +78,52 @@ def test_run_narration_renders_all_chapters_and_master(monkeypatch):
     # Each chapter wrote an mp3 + a master.
     assert sum(1 for k in objects if k.endswith(".mp3")) == 2
     assert any(k.endswith("master.m4b") for k in objects)
+
+
+def test_run_narration_synthesizes_real_chapter_text(monkeypatch):
+    """run_narration must repopulate chapter text from source.txt before
+    synthesize. The manifest excludes `text`, so after the load_manifest
+    reload the provider would otherwise receive empty input (HTTP 400)."""
+    _install_fakes(monkeypatch)
+    captured: list[str] = []
+
+    class CapturingProvider(FakeProvider):
+        def synthesize(self, text, voice_id):
+            captured.append(text)
+            return super().synthesize(text, voice_id)
+
+    req = CreateBookRequest(
+        title="RealText",
+        text="Chapter 1\nFirst body.\n\nChapter 2\nSecond body.",
+    )
+    book = narration_service.create_book(req)
+    monkeypatch.setattr(narration_service, "get_provider", lambda: CapturingProvider())
+
+    narration_service.run_narration(book.id)
+
+    final = narration_service.get_book_detail(book.id)
+    assert final.status == NarrationStatus.COMPLETE
+    # Each chapter's actual (non-empty) body reached the provider.
+    assert len(captured) == 2
+    assert all(text for text in captured)
+    assert "First body." in captured[0]
+    assert "Second body." in captured[1]
+
+
+def test_run_narration_fails_when_source_missing(monkeypatch):
+    """If source.txt is gone the job fails cleanly rather than sending empty
+    text to the provider."""
+    objects, _ = _install_fakes(monkeypatch)
+    req = CreateBookRequest(title="NoSource", text="Chapter 1\nA.")
+    book = narration_service.create_book(req)
+    # Drop the source so repopulation cannot find it.
+    for key in [k for k in objects if k.endswith("source.txt")]:
+        del objects[key]
+
+    narration_service.run_narration(book.id)
+    final = narration_service.get_book_detail(book.id)
+    assert final.status == NarrationStatus.FAILED
+    assert "source" in (final.error or "").lower()
 
 
 def test_run_narration_marks_failed_on_tts_error(monkeypatch):
