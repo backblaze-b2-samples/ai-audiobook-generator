@@ -239,7 +239,10 @@ function canConnect(port, host) {
       socket.destroy();
       res(false);
     });
-    socket.once("error", () => res(false));
+    socket.once("error", () => {
+      socket.destroy();
+      res(false);
+    });
   });
 }
 

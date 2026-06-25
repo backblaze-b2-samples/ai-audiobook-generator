@@ -76,7 +76,11 @@ async def create_book_endpoint(request: CreateBookRequest):
                 await run_in_threadpool(delete_book, book.id)
             except Exception:
                 logger.exception("Failed to clean up audiobook after enqueue failure")
-        logger.error("Narration queue unavailable for book %s: %s", getattr(book, "id", None), e)
+        logger.error(
+            "Narration queue unavailable for book %s: error_type=%s",
+            getattr(book, "id", None),
+            type(e).__name__,
+        )
         raise HTTPException(status_code=503, detail="Narration queue unavailable") from None
     # Render in the durable worker; the client polls GET /books/{id} for progress.
     logger.info("Audiobook created: id=%s chapters=%d", book.id, book.chapter_count)
@@ -104,7 +108,11 @@ async def delete_book_endpoint(book_id: str):
     except BookNotFoundError as e:
         raise HTTPException(status_code=404, detail=e.detail) from None
     except JobQueueError as e:
-        logger.error("Narration cancellation failed for book %s: %s", book_id, e)
+        logger.error(
+            "Narration cancellation failed for book %s: error_type=%s",
+            book_id,
+            type(e).__name__,
+        )
         raise HTTPException(status_code=503, detail="Narration queue unavailable") from None
     logger.info("Audiobook deleted: id=%s objects=%d", book_id, deleted)
     return {"deleted": True, "id": book_id, "objects_removed": deleted}
