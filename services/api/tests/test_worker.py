@@ -62,7 +62,7 @@ def test_resume_scan_queue_error_logs_safely(monkeypatch, caplog):
     monkeypatch.setattr(
         worker,
         "enqueue_resume_candidates",
-        lambda batch_size: (_ for _ in ()).throw(
+        lambda batch_size, max_manifests: (_ for _ in ()).throw(
             worker.JobQueueError("redis://private-host:6379 timed out")
         ),
     )
@@ -113,3 +113,23 @@ def test_worker_resume_scan_starts_when_flag_enabled(monkeypatch):
     worker.main()
 
     assert starts == 1
+
+
+def test_resume_scan_passes_bounded_settings(monkeypatch):
+    class FakeLease:
+        def release(self):
+            pass
+
+    calls: list[tuple[int, int]] = []
+    monkeypatch.setattr(worker, "acquire_resume_scan_lease", lambda: FakeLease())
+    monkeypatch.setattr(worker.settings, "narration_resume_scan_batch_size", 7)
+    monkeypatch.setattr(worker.settings, "narration_resume_scan_max_manifests", 11)
+    monkeypatch.setattr(
+        worker,
+        "enqueue_resume_candidates",
+        lambda batch_size, max_manifests: calls.append((batch_size, max_manifests)) or 0,
+    )
+
+    worker._resume_existing_books()
+
+    assert calls == [(7, 11)]

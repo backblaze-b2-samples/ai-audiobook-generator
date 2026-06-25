@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     narration_tombstone_ttl_seconds: int = 24 * 60 * 60
     narration_resume_scan_enabled: bool = False
     narration_resume_scan_batch_size: int = 100
+    narration_resume_scan_max_manifests: int = 1000
     narration_resume_scan_lease_ttl_seconds: int = 15 * 60
 
     # Minimal tenant auth for audiobook routes. Format:

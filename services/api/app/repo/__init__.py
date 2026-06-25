@@ -31,8 +31,10 @@ from app.repo.job_queue import (
     cancel_job,
     current_job_retries_left,
     enqueue_job,
+    get_resume_scan_cursor,
     is_book_tombstoned,
     run_worker,
+    set_resume_scan_cursor,
     tombstone_book,
 )
 from app.repo.tts import TTSError, TTSProvider, get_provider
@@ -57,6 +59,7 @@ __all__ = [
     "get_file_metadata",
     "get_presigned_url",
     "get_provider",
+    "get_resume_scan_cursor",
     "get_stream_url",
     "get_upload_stats",
     "is_book_tombstoned",
@@ -67,6 +70,7 @@ __all__ = [
     "read_json",
     "read_object",
     "run_worker",
+    "set_resume_scan_cursor",
     "tombstone_book",
     "upload_file",
     "write_json",

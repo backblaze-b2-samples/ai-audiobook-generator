@@ -78,6 +78,19 @@ def test_load_missing_manifest_raises(monkeypatch):
         books_service.load_manifest(VALID_ID)
 
 
+def test_list_book_ids_passes_resume_cursor(monkeypatch):
+    calls: list[tuple[str, int | None, str | None]] = []
+
+    def list_prefixes(prefix, limit=None, start_after=None):
+        calls.append((prefix, limit, start_after))
+        return [f"audiobooks/{VALID_ID}/"]
+
+    monkeypatch.setattr(books_service, "list_prefixes", list_prefixes)
+
+    assert books_service.list_book_ids(limit=3, start_after_id=VALID_ID) == [VALID_ID]
+    assert calls == [("audiobooks/", 3, books_service.book_prefix(VALID_ID))]
+
+
 def test_book_detail_exposes_derived_fields(monkeypatch):
     now = datetime.now(UTC)
     book = Book(
@@ -151,7 +164,7 @@ def test_book_owner_authorization_filters_and_denies(monkeypatch):
     monkeypatch.setattr(
         books_service,
         "list_prefixes",
-        lambda prefix, limit=None: [
+        lambda prefix, limit=None, start_after=None: [
             f"audiobooks/{VALID_ID}/",
             f"audiobooks/{other_id}/",
         ],

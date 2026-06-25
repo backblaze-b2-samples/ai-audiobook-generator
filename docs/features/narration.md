@@ -43,8 +43,8 @@ chapter with a TTS provider, and assemble a final master — all stored in B2.
   status `complete`
 - Worker startup starts queue consumption immediately. If
   `NARRATION_RESUME_SCAN_ENABLED=true`, a background scan walks every audiobook
-  manifest under a Redis lease and re-enqueues `pending`, `rendering`, and
-  `assembling` books from per-chapter manifest state.
+  manifest over bounded worker-start passes under a Redis lease and re-enqueues
+  `pending`, `rendering`, and `assembling` books from per-chapter manifest state.
 - Each running job holds a per-book Redis lease and checks a delete tombstone before
   writes; lease contention raises back to RQ so the job retries.
 - Transient TTS and other worker failures raise back to RQ while retries remain; a

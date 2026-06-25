@@ -8,6 +8,8 @@ from app.repo.tts.base import TTSProvider
 from app.service import narration as narration_service
 from app.types import BookSummary, CreateBookRequest, NarrationStatus, Voice
 
+VALID_ID = "12345678-1234-1234-1234-123456789abc"
+
 
 class FakeProvider(TTSProvider):
     def list_voices(self):
@@ -412,6 +414,88 @@ def test_enqueue_resume_candidates_scans_beyond_first_batch(monkeypatch):
 
     assert count == 1
     assert queued == [f"narration:{pending_id}"]
+
+
+def test_enqueue_resume_candidates_advances_bounded_cursor(monkeypatch):
+    now = datetime.now(UTC)
+    ids = [
+        "22345678-1234-1234-1234-123456789abc",
+        "32345678-1234-1234-1234-123456789abc",
+    ]
+
+    from app.service import books as books_service
+
+    calls: list[tuple[int | None, str | None]] = []
+    cursor_updates: list[str | None] = []
+    queued: list[str] = []
+
+    def list_book_ids(limit=None, start_after_id=None):
+        calls.append((limit, start_after_id))
+        return ids
+
+    def load_manifest(book_id):
+        return BookSummary(
+            id=book_id,
+            title=book_id,
+            status=NarrationStatus.PENDING,
+            chapter_count=1,
+            chapters_rendered=0,
+            duration_seconds=0.0,
+            duration_human="0s",
+            created_at=now,
+        )
+
+    monkeypatch.setattr(narration_service, "get_resume_scan_cursor", lambda: VALID_ID)
+    monkeypatch.setattr(narration_service, "set_resume_scan_cursor", cursor_updates.append)
+    monkeypatch.setattr(books_service, "list_book_ids", list_book_ids)
+    monkeypatch.setattr(books_service, "load_manifest", load_manifest)
+    monkeypatch.setattr(
+        narration_service,
+        "enqueue_job",
+        lambda target, args, job_id: queued.append(job_id),
+    )
+
+    count = narration_service.enqueue_resume_candidates(max_manifests=2)
+
+    assert count == 2
+    assert calls == [(2, VALID_ID)]
+    assert cursor_updates == [ids[-1]]
+    assert queued == [f"narration:{book_id}" for book_id in ids]
+
+
+def test_enqueue_resume_candidates_clears_cursor_at_end(monkeypatch):
+    now = datetime.now(UTC)
+    book_id = "22345678-1234-1234-1234-123456789abc"
+
+    from app.service import books as books_service
+
+    cursor_updates: list[str | None] = []
+    monkeypatch.setattr(narration_service, "get_resume_scan_cursor", lambda: VALID_ID)
+    monkeypatch.setattr(narration_service, "set_resume_scan_cursor", cursor_updates.append)
+    monkeypatch.setattr(
+        books_service,
+        "list_book_ids",
+        lambda limit=None, start_after_id=None: [book_id],
+    )
+    monkeypatch.setattr(
+        books_service,
+        "load_manifest",
+        lambda loaded_id: BookSummary(
+            id=loaded_id,
+            title=loaded_id,
+            status=NarrationStatus.COMPLETE,
+            chapter_count=1,
+            chapters_rendered=1,
+            duration_seconds=0.0,
+            duration_human="0s",
+            created_at=now,
+        ),
+    )
+
+    count = narration_service.enqueue_resume_candidates(max_manifests=2)
+
+    assert count == 0
+    assert cursor_updates == [None]
 
 
 def test_list_voices_uses_provider(monkeypatch):

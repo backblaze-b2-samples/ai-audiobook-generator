@@ -37,7 +37,8 @@ def _resume_existing_books() -> None:
 
     try:
         queued = enqueue_resume_candidates(
-            batch_size=settings.narration_resume_scan_batch_size
+            batch_size=settings.narration_resume_scan_batch_size,
+            max_manifests=settings.narration_resume_scan_max_manifests,
         )
         logger.info("Queued %d incomplete narration jobs", queued)
     except (JobLeaseError, JobQueueError) as e:

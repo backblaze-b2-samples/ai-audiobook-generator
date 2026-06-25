@@ -14,9 +14,11 @@ from app.repo import (
     current_job_retries_left,
     enqueue_job,
     get_provider,
+    get_resume_scan_cursor,
     is_book_tombstoned,
     put_bytes,
     read_object,
+    set_resume_scan_cursor,
     tombstone_book,
 )
 from app.service import books as books_service
@@ -82,11 +84,16 @@ def enqueue_narration_job(book_id: str) -> str:
     return enqueue_job(NARRATION_JOB_TARGET, (book_id,), narration_job_id(book_id))
 
 
-def enqueue_resume_candidates(batch_size: int | None = None) -> int:
+def enqueue_resume_candidates(batch_size: int | None = None, max_manifests: int | None = None) -> int:
     queued = 0
     checked = 0
-    for book_id in books_service.list_book_ids():
+    cursor = get_resume_scan_cursor() if max_manifests else None
+    kwargs = {"limit": max_manifests, "start_after_id": cursor} if max_manifests else {}
+    ids = books_service.list_book_ids(**kwargs)
+    last_book_id = None
+    for book_id in ids:
         checked += 1
+        last_book_id = book_id
         try:
             book = books_service.load_manifest(book_id)
         except Exception as e:
@@ -98,6 +105,8 @@ def enqueue_resume_candidates(batch_size: int | None = None) -> int:
         queued += 1
         if batch_size and checked % batch_size == 0:
             logger.info("Resume scan checked %d manifests", checked)
+    if max_manifests:
+        set_resume_scan_cursor(last_book_id if checked >= max_manifests else None)
     logger.info("Resume scan checked %d manifests total", checked)
     return queued
 
@@ -132,7 +141,6 @@ def _put_book_bytes(book: Book, data: bytes, key: str, content_type: str, lease)
 
 
 def _repopulate_chapter_text(book: Book) -> None:
-    """Restore per-chapter text from the durable source.txt."""
     raw = read_object(books_service.source_key(book.id))
     if raw is None:
         raise PermanentNarrationError(f"Source manuscript missing for book {book.id}.")
@@ -238,10 +246,7 @@ def _should_retry_current_job() -> bool:
 
 
 def _mark_failed(book: Book, error: str, lease) -> None:
-    current = next(
-        (c for c in book.chapters if c.status == NarrationStatus.RENDERING),
-        None,
-    )
+    current = next((c for c in book.chapters if c.status == NarrationStatus.RENDERING), None)
     if current:
         current.status = NarrationStatus.FAILED
         current.error = error
@@ -260,9 +265,7 @@ def _assemble(book: Book, lease) -> None:
             _ensure_not_deleted(book.id)
             data = read_object(chapter.audio_key) if chapter.audio_key else None
             if data is None:
-                raise AudioAssemblyError(
-                    f"Missing audio for chapter {chapter.index} during assembly."
-                )
+                raise AudioAssemblyError(f"Missing audio for chapter {chapter.index}.")
             lease.refresh()
             audio_blobs.append(data)
             meta.append((chapter.title, chapter.duration_seconds or 0.0))

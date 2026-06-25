@@ -25,6 +25,7 @@ ACTIVE_STATUSES = {
 DEDUPABLE_STATUSES = ACTIVE_STATUSES - {JobStatus.STARTED}
 TASK_SERIALIZER = JSONSerializer
 JobValidator = Callable[[tuple, dict], None]
+RESUME_SCAN_CURSOR_KEY = "narration:resume-scan:last-book-id"
 
 
 class JobQueueError(Exception):
@@ -174,6 +175,29 @@ def _acquire_lease(name: str, ttl_seconds: int, detail: str) -> RedisLease:
     if not acquired:
         raise JobLeaseError(detail)
     return RedisLease(lock)
+
+
+def get_resume_scan_cursor() -> str | None:
+    try:
+        value = _connection().get(RESUME_SCAN_CURSOR_KEY)
+    except RedisError as e:
+        raise JobQueueError(_redis_error_detail(e)) from e
+    if value is None:
+        return None
+    if isinstance(value, bytes):
+        return value.decode("utf-8")
+    return str(value)
+
+
+def set_resume_scan_cursor(book_id: str | None) -> None:
+    try:
+        connection = _connection()
+        if book_id is None:
+            connection.delete(RESUME_SCAN_CURSOR_KEY)
+        else:
+            connection.set(RESUME_SCAN_CURSOR_KEY, book_id)
+    except RedisError as e:
+        raise JobQueueError(_redis_error_detail(e)) from e
 
 
 def tombstone_book(book_id: str) -> None:

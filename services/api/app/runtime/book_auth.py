@@ -1,6 +1,7 @@
 """Tenant authentication for audiobook routes."""
 
 from dataclasses import dataclass
+from functools import lru_cache
 from secrets import compare_digest
 from typing import Annotated
 
@@ -14,6 +15,7 @@ class BookPrincipal:
     owner_id: str
 
 
+@lru_cache(maxsize=1)
 def _configured_tokens() -> dict[str, str]:
     tokens: dict[str, str] = {}
     for item in settings.book_auth_tokens.split(","):

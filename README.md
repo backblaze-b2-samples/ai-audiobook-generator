@@ -164,7 +164,8 @@ Open `.env` and fill in:
   `NEXT_PUBLIC_BOOK_TOKEN` on the web app for this sample deployment.
 - Worker resume scans: leave `NARRATION_RESUME_SCAN_ENABLED=false` while rolling out
   from any old API instances that used in-process background jobs. Enable it on the
-  worker only after those API instances are drained.
+  worker only after those API instances are drained. Tune
+  `NARRATION_RESUME_SCAN_MAX_MANIFESTS` to cap each worker-start scan pass.
 
 > Walkthroughs: [creating a bucket](https://www.backblaze.com/docs/cloud-storage-create-and-manage-buckets?utm_source=github&utm_medium=referral&utm_campaign=ai_artifacts&utm_content=b2ai-audiobook-generator) ·
 > [creating app keys](https://www.backblaze.com/docs/cloud-storage-create-and-manage-app-keys?utm_source=github&utm_medium=referral&utm_campaign=ai_artifacts&utm_content=b2ai-audiobook-generator).

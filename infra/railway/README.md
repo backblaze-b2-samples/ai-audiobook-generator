@@ -52,8 +52,9 @@ Set the same B2, TTS, `REDIS_URL`, and `BOOK_AUTH_TOKENS` configuration on the
 Worker service. Set `NARRATION_RESUME_SCAN_ENABLED=false` for the first deploy from
 legacy in-process renderers, drain all old API instances, then set
 `NARRATION_RESUME_SCAN_ENABLED=true` on the Worker service. Optionally tune
-`NARRATION_RESUME_SCAN_BATCH_SIZE`; it controls progress logging, not a hard cap.
-Keep ffmpeg installed on the Worker service only.
+`NARRATION_RESUME_SCAN_BATCH_SIZE` for progress logging and
+`NARRATION_RESUME_SCAN_MAX_MANIFESTS` for the maximum manifests checked per
+worker-start scan pass. Keep ffmpeg installed on the Worker service only.
 
 Set this on the Web service:
 

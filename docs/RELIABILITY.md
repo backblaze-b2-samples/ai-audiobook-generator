@@ -11,9 +11,11 @@ Reliability expectations and practices for this project.
   remain in Redis and the worker keeps using the manifest in B2 as the source of truth.
 - Worker startup begins queue consumption immediately. When
   `NARRATION_RESUME_SCAN_ENABLED=true`, a background resume scan walks every
-  audiobook manifest, logs progress every `NARRATION_RESUME_SCAN_BATCH_SIZE`
-  manifests, and re-enqueues books in `pending`, `rendering`, or `assembling` under
-  a Redis scan lease.
+  audiobook manifest over bounded worker-start passes, logs progress every
+  `NARRATION_RESUME_SCAN_BATCH_SIZE` manifests, and re-enqueues books in `pending`,
+  `rendering`, or `assembling` under a Redis scan lease. The Redis cursor lets later
+  starts continue after `NARRATION_RESUME_SCAN_MAX_MANIFESTS` instead of re-reading
+  only the first prefixes.
 - `run_narration` skips chapters already marked `complete` with an `audio_key`; pending,
   rendering, or failed chapters are retried from the durable source manuscript.
 - Workers acquire a per-book Redis lease before rendering and refresh it after each

@@ -6,6 +6,7 @@ import pytest
 
 from app.config import settings
 from app.repo import JobQueueError
+from app.runtime import book_auth
 from app.runtime import books as books_runtime
 from app.service import books as books_service
 from app.service import narration as narration_service
@@ -13,6 +14,13 @@ from app.types import Book, Chapter, NarrationStatus
 from tests.test_narration import _install_fakes
 
 VALID_ID = "12345678-1234-1234-1234-123456789abc"
+
+
+@pytest.fixture(autouse=True)
+def clear_book_auth_cache():
+    book_auth._configured_tokens.cache_clear()
+    yield
+    book_auth._configured_tokens.cache_clear()
 
 
 @pytest.mark.asyncio
@@ -60,7 +68,7 @@ async def test_book_routes_enforce_owner_scope(client, monkeypatch):
     monkeypatch.setattr(
         books_service,
         "list_prefixes",
-        lambda prefix, limit=None: [
+        lambda prefix, limit=None, start_after=None: [
             books_service.book_prefix(VALID_ID),
             books_service.book_prefix(other_id),
         ],

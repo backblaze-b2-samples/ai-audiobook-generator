@@ -159,8 +159,18 @@ def _id_from_prefix(prefix: str) -> str:
     return prefix[len(ROOT_PREFIX):].rstrip("/")
 
 
-def list_book_ids(limit: int | None = None) -> list[str]:
-    return [_id_from_prefix(prefix) for prefix in list_prefixes(ROOT_PREFIX, limit=limit)]
+def list_book_ids(
+    limit: int | None = None,
+    start_after_id: str | None = None,
+) -> list[str]:
+    start_after = None
+    if start_after_id:
+        validate_book_id(start_after_id)
+        start_after = book_prefix(start_after_id)
+    return [
+        _id_from_prefix(prefix)
+        for prefix in list_prefixes(ROOT_PREFIX, limit=limit, start_after=start_after)
+    ]
 
 
 def list_books(limit: int | None = None, owner_id: str | None = None) -> list[BookSummary]:
