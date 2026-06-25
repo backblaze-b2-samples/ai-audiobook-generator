@@ -15,7 +15,7 @@ class JSONFormatter(logging.Formatter):
         if hasattr(record, "request_id"):
             log_entry["request_id"] = record.request_id
         if record.exc_info and record.exc_info[1]:
-            log_entry["exception"] = str(record.exc_info[1])
+            log_entry["exception"] = type(record.exc_info[1]).__name__
         return json.dumps(log_entry)
 
 

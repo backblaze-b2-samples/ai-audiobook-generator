@@ -1,8 +1,4 @@
-"""Narration job orchestration — single narrator voice.
-
-The B2 manifest is the durable job record. Redis/RQ only queues book ids; the
-worker resumes from per-chapter manifest state and skips completed chapters.
-"""
+"""Narration job orchestration for durable single-voice audiobook jobs."""
 
 import logging
 import uuid
@@ -38,15 +34,16 @@ INCOMPLETE_STATUSES = {
 NARRATION_JOB_TARGET = "app.service.narration.run_narration"
 
 
+class PermanentNarrationError(TTSError):
+    """Raised for non-retryable narration data failures."""
+
+
 def _now() -> datetime:
     return datetime.now(UTC)
 
 
 def create_book(request: CreateBookRequest) -> Book:
-    """Create a book, persist source + initial manifest, return the Book.
-
-    Does NOT render audio — enqueue the returned id with enqueue_narration_job().
-    """
+    """Create and persist a book without rendering audio."""
     chapters = split_into_chapters(request.text)
     if not chapters:
         raise ValueError("Manuscript produced no chapters (empty text).")
@@ -143,16 +140,10 @@ def _put_book_bytes(book: Book, data: bytes, key: str, content_type: str, lease)
 
 
 def _repopulate_chapter_text(book: Book) -> None:
-    """Restore per-chapter text from the durable source.txt.
-
-    The manifest excludes chapter text (it lives only in source.txt), so a
-    book loaded from the manifest has empty `chapter.text`. Re-read the
-    manuscript and re-run the deterministic split, matching by contiguous
-    index, so synthesize() receives the real chapter text rather than "".
-    """
+    """Restore per-chapter text from the durable source.txt."""
     raw = read_object(books_service.source_key(book.id))
     if raw is None:
-        raise TTSError(f"Source manuscript missing for book {book.id}.")
+        raise PermanentNarrationError(f"Source manuscript missing for book {book.id}.")
     source_chapters = split_into_chapters(raw.decode("utf-8"))
     by_index = {c.index: c.text for c in source_chapters}
     for chapter in book.chapters:
@@ -217,6 +208,14 @@ def _run_narration_with_lease(book_id: str, lease) -> None:
             chapter.status = NarrationStatus.COMPLETE
             chapter.error = None
             _touch(book, lease)
+    except PermanentNarrationError as e:
+        _mark_failed(book, str(e), lease)
+        logger.error(
+            "Narration failed permanently for book %s: error_type=%s",
+            book_id,
+            type(e).__name__,
+        )
+        return
     except TTSError as e:
         if _should_retry_current_job():
             book.status = NarrationStatus.RENDERING

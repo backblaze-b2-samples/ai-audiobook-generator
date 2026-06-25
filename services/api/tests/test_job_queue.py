@@ -1,9 +1,17 @@
 """Tests for Redis/RQ queue hardening."""
 
 import pytest
+from redis.exceptions import RedisError
 from rq import Worker
 
-from app.repo.job_queue import JobSecurityError, RestrictedWorker
+from app.repo import job_queue as job_queue_repo
+from app.repo.job_queue import (
+    JobLeaseError,
+    JobQueueError,
+    JobSecurityError,
+    RedisLease,
+    RestrictedWorker,
+)
 from app.service import narration as narration_service
 from app.service.books import BookKeyError
 
@@ -56,3 +64,32 @@ def test_narration_job_rejects_non_uuid_argument():
 def test_narration_job_rejects_non_string_argument():
     with pytest.raises(ValueError, match="book id must be a string"):
         narration_service.validate_narration_job(({"id": "not-a-string"},), {})
+
+
+def test_redis_lease_refresh_error_is_sanitized():
+    class FakeLock:
+        def reacquire(self):
+            raise RedisError("redis://private-host:6379 timed out")
+
+    with pytest.raises(JobLeaseError) as exc_info:
+        RedisLease(FakeLock()).refresh()
+
+    assert "private-host" not in str(exc_info.value)
+    assert "RedisError" in str(exc_info.value)
+    assert isinstance(exc_info.value.__cause__, RedisError)
+
+
+def test_enqueue_job_redis_error_is_sanitized(monkeypatch):
+    class FakeQueue:
+        def fetch_job(self, job_id):
+            raise RedisError("redis://private-host:6379 timed out")
+
+    monkeypatch.setattr(job_queue_repo, "_connection", lambda: object())
+    monkeypatch.setattr(job_queue_repo, "_queue", lambda connection: FakeQueue())
+
+    with pytest.raises(JobQueueError) as exc_info:
+        job_queue_repo.enqueue_job("app.service.narration.run_narration", (), "job")
+
+    assert "private-host" not in str(exc_info.value)
+    assert "RedisError" in str(exc_info.value)
+    assert isinstance(exc_info.value.__cause__, RedisError)

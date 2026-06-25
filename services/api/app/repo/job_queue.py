@@ -38,6 +38,10 @@ class JobLeaseError(Exception):
     """Raised when a book lease cannot be acquired or refreshed."""
 
 
+def _redis_error_detail(e: RedisError) -> str:
+    return f"Redis error: {type(e).__name__}"
+
+
 @dataclass
 class RedisLease:
     lock: Lock
@@ -46,7 +50,7 @@ class RedisLease:
         try:
             self.lock.reacquire()
         except RedisError as e:
-            raise JobLeaseError(str(e)) from e
+            raise JobLeaseError(_redis_error_detail(e)) from e
 
     def release(self) -> None:
         try:
@@ -107,7 +111,7 @@ def enqueue_job(target: str, args: tuple, job_id: str) -> str:
     except DuplicateJobError:
         return job_id
     except RedisError as e:
-        raise JobQueueError(str(e)) from e
+        raise JobQueueError(_redis_error_detail(e)) from e
     return job.id
 
 
@@ -117,7 +121,7 @@ def cancel_job(job_id: str) -> None:
         if job and job.get_status(refresh=True) in ACTIVE_STATUSES:
             job.cancel()
     except RedisError as e:
-        raise JobQueueError(str(e)) from e
+        raise JobQueueError(_redis_error_detail(e)) from e
 
 
 def acquire_book_lease(book_id: str) -> RedisLease:
@@ -147,7 +151,7 @@ def _acquire_lease(name: str, ttl_seconds: int, detail: str) -> RedisLease:
     try:
         acquired = lock.acquire(blocking=False)
     except RedisError as e:
-        raise JobLeaseError(str(e)) from e
+        raise JobLeaseError(_redis_error_detail(e)) from e
     if not acquired:
         raise JobLeaseError(detail)
     return RedisLease(lock)
@@ -161,14 +165,14 @@ def tombstone_book(book_id: str) -> None:
             ex=settings.narration_tombstone_ttl_seconds,
         )
     except RedisError as e:
-        raise JobQueueError(str(e)) from e
+        raise JobQueueError(_redis_error_detail(e)) from e
 
 
 def is_book_tombstoned(book_id: str) -> bool:
     try:
         return bool(_connection().exists(_tombstone_key(book_id)))
     except RedisError as e:
-        raise JobQueueError(str(e)) from e
+        raise JobQueueError(_redis_error_detail(e)) from e
 
 
 def _tombstone_key(book_id: str) -> str:
@@ -206,7 +210,7 @@ def run_worker(allowed_targets: dict[str, JobValidator]) -> None:
     try:
         connection.ping()
     except RedisError as e:
-        raise JobQueueError(str(e)) from e
+        raise JobQueueError(_redis_error_detail(e)) from e
     queue = _queue(connection)
     RestrictedWorker(
         [queue],

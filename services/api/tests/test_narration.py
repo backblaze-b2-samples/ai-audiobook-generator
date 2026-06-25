@@ -245,6 +245,24 @@ def test_run_narration_retries_transient_tts_error(monkeypatch):
     assert attempts == 2
 
 
+def test_run_narration_does_not_retry_missing_source(monkeypatch):
+    objects, _ = _install_fakes(monkeypatch)
+    req = CreateBookRequest(title="Missing Source", text="Chapter 1\nA.")
+    book = narration_service.create_book(req)
+    for key in list(objects):
+        if key.endswith("source.txt"):
+            del objects[key]
+    monkeypatch.setattr(narration_service, "current_job_retries_left", lambda: 2)
+
+    narration_service.run_narration(book.id)
+
+    final = narration_service.get_book_detail(book.id)
+    assert final.status == NarrationStatus.FAILED
+    assert final.error is not None
+    assert "Source manuscript missing" in final.error
+    assert "Retrying narration" not in final.error
+
+
 def test_run_narration_exits_when_book_lease_unavailable(monkeypatch, caplog):
     objects, _ = _install_fakes(monkeypatch)
     req = CreateBookRequest(title="Lease", text="Chapter 1\nA.")
