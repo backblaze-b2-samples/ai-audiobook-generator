@@ -104,6 +104,23 @@ def test_book_detail_exposes_derived_fields(monkeypatch):
     assert detail.chapters[0].duration_seconds == 3661.0
 
 
+def test_legacy_manifest_defaults_to_local_owner(monkeypatch):
+    now = datetime.now(UTC)
+    legacy_manifest = {
+        "id": VALID_ID,
+        "title": "Legacy",
+        "voice_id": "alloy",
+        "chapters": [],
+        "created_at": now.isoformat(),
+        "updated_at": now.isoformat(),
+    }
+    monkeypatch.setattr(books_service, "read_json", lambda k: legacy_manifest)
+
+    detail = books_service.get_book(VALID_ID, owner_id="local-dev")
+
+    assert detail.id == VALID_ID
+
+
 def test_book_owner_authorization_filters_and_denies(monkeypatch):
     now = datetime.now(UTC)
     other_id = "abcdef12-1234-1234-1234-123456789abc"
@@ -150,3 +167,68 @@ def test_book_owner_authorization_filters_and_denies(monkeypatch):
         books_service.chapter_stream_url(other_id, 0, owner_id="user-a")
     with pytest.raises(BookAccessError):
         books_service.delete_book(other_id, owner_id="user-a")
+
+
+def test_book_stats_reuses_loaded_owned_ids_for_size(monkeypatch):
+    now = datetime.now(UTC)
+    other_id = "abcdef12-1234-1234-1234-123456789abc"
+    mine = Book(
+        id=VALID_ID,
+        owner_id="user-a",
+        title="Mine",
+        voice_id="alloy",
+        chapters=[
+            Chapter(
+                index=0,
+                title="One",
+                char_count=5,
+                status=NarrationStatus.COMPLETE,
+                duration_seconds=10.0,
+            )
+        ],
+        created_at=now,
+        updated_at=now,
+    )
+    other = Book(
+        id=other_id,
+        owner_id="user-b",
+        title="Other",
+        voice_id="alloy",
+        chapters=[Chapter(index=0, title="One", char_count=5)],
+        created_at=now,
+        updated_at=now,
+    )
+    manifests = {
+        manifest_key(VALID_ID): mine.model_dump(mode="json"),
+        manifest_key(other_id): other.model_dump(mode="json"),
+    }
+    reads: list[str] = []
+    sized_prefixes: list[str] = []
+    monkeypatch.setattr(
+        books_service,
+        "list_prefixes",
+        lambda prefix, limit=None: [
+            f"audiobooks/{VALID_ID}/",
+            f"audiobooks/{other_id}/",
+        ],
+    )
+
+    def read_json(key):
+        reads.append(key)
+        return manifests.get(key)
+
+    def prefix_size(prefix):
+        sized_prefixes.append(prefix)
+        return 7
+
+    monkeypatch.setattr(books_service, "read_json", read_json)
+    monkeypatch.setattr(books_service, "prefix_size", prefix_size)
+
+    stats = books_service.book_stats(owner_id="user-a")
+
+    assert stats.total_books == 1
+    assert stats.total_chapters == 1
+    assert stats.total_duration_seconds == 10.0
+    assert stats.total_size_bytes == 7
+    assert reads == [manifest_key(VALID_ID), manifest_key(other_id)]
+    assert sized_prefixes == [books_service.book_prefix(VALID_ID)]

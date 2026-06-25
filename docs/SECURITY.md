@@ -9,7 +9,8 @@ Security principles and implementation for the AI Audiobook Generator.
 - **Audiobook route auth**: `/books` list, create, read, stream, download, and delete
   require `X-Book-Owner` plus `X-Book-Token`. The API validates the token against
   `BOOK_AUTH_TOKENS` and only returns manifests whose stored `owner_id` matches the
-  authenticated owner.
+  authenticated owner. Legacy manifests without `owner_id` load as `local-dev` for
+  local backwards compatibility.
 - **API -> B2**: Authenticated via `B2_APPLICATION_KEY_ID` + `B2_APPLICATION_KEY`, signature v4
 - **API -> TTS provider**: provider key (`OPENAI_API_KEY` / `ELEVENLABS_API_KEY`) read
   from env and used **only** in `repo/tts/`. It never reaches the client and never

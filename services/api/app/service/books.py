@@ -201,6 +201,7 @@ def book_stats(owner_id: str | None = None) -> BookStats:
     total_books = 0
     total_chapters = 0
     total_duration = 0.0
+    owned_book_ids: list[str] = []
     for prefix in list_prefixes(ROOT_PREFIX):
         book_id = _id_from_prefix(prefix)
         raw = read_json(manifest_key(book_id))
@@ -212,10 +213,11 @@ def book_stats(owner_id: str | None = None) -> BookStats:
         total_books += 1
         total_chapters += book.chapters_rendered
         total_duration += book.duration_seconds
+        owned_book_ids.append(book.id)
     total_size = (
         prefix_size(ROOT_PREFIX)
         if owner_id is None
-        else sum(prefix_size(book_prefix(book.id)) for book in list_books(owner_id=owner_id))
+        else sum(prefix_size(book_prefix(book_id)) for book_id in owned_book_ids)
     )
     return BookStats(
         total_books=total_books,

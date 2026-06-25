@@ -39,7 +39,7 @@ class Book(BaseModel):
     """Full book record. This is exactly what manifest.json stores in B2."""
 
     id: str
-    owner_id: str = ""
+    owner_id: str = "local-dev"
     title: str
     status: NarrationStatus = NarrationStatus.PENDING
     voice_id: str
