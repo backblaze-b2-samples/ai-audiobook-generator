@@ -1,6 +1,7 @@
 import json
 import logging
 import sys
+import traceback
 from datetime import UTC, datetime
 
 
@@ -16,6 +17,14 @@ class JSONFormatter(logging.Formatter):
             log_entry["request_id"] = record.request_id
         if record.exc_info and record.exc_info[1]:
             log_entry["exception"] = type(record.exc_info[1]).__name__
+            log_entry["traceback"] = [
+                {
+                    "file": frame.filename,
+                    "line": frame.lineno,
+                    "function": frame.name,
+                }
+                for frame in traceback.extract_tb(record.exc_info[2])
+            ]
         return json.dumps(log_entry)
 
 

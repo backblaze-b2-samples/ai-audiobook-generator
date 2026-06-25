@@ -26,4 +26,6 @@ def test_json_formatter_logs_exception_type_without_message():
     payload = json.loads(formatter.format(record))
 
     assert payload["exception"] == "RuntimeError"
+    assert payload["traceback"]
+    assert set(payload["traceback"][-1]) == {"file", "line", "function"}
     assert "private-host" not in json.dumps(payload)
