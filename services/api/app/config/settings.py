@@ -18,6 +18,14 @@ class Settings(BaseSettings):
     elevenlabs_api_key: str = ""
     tts_default_voice: str = ""
 
+    # Durable narration jobs. API requests enqueue work into Redis, and a
+    # separate RQ worker process renders chapters from the B2 manifest.
+    redis_url: str = "redis://localhost:6379/0"
+    narration_queue_name: str = "narration"
+    narration_job_timeout_seconds: int = 60 * 60
+    narration_job_result_ttl_seconds: int = 24 * 60 * 60
+    narration_job_failure_ttl_seconds: int = 7 * 24 * 60 * 60
+
     api_port: int = 8000
     # Explicit allowlist by default — covers Next on :3000 and the
     # fallback :3001 it picks if 3000 is busy. Production deploys should

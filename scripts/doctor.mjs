@@ -10,7 +10,7 @@
 // Run via pnpm:  pnpm doctor
 
 import { existsSync, readFileSync } from "node:fs";
-import { createServer } from "node:net";
+import { createConnection, createServer } from "node:net";
 import { execSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ENV_FILE = resolve(REPO_ROOT, ".env");
 const VENV_UVICORN = resolve(REPO_ROOT, "services/api/.venv/bin/uvicorn");
+const DEFAULT_REDIS_URL = "redis://localhost:6379/0";
 
 // Required minimum versions. Bump as upstream support shifts.
 const REQUIRED_NODE_MAJOR = 20;
@@ -220,6 +221,57 @@ function isPortBoundOn(port, host) {
   });
 }
 
+function redisUrlFromEnv() {
+  if (!existsSync(ENV_FILE)) return DEFAULT_REDIS_URL;
+  const env = parseEnvFile(ENV_FILE);
+  return env.REDIS_URL || DEFAULT_REDIS_URL;
+}
+
+function canConnect(port, host) {
+  return new Promise((res) => {
+    const socket = createConnection({ port, host });
+    socket.setTimeout(1000);
+    socket.once("connect", () => {
+      socket.destroy();
+      res(true);
+    });
+    socket.once("timeout", () => {
+      socket.destroy();
+      res(false);
+    });
+    socket.once("error", () => res(false));
+  });
+}
+
+async function checkRedis() {
+  const redisUrl = redisUrlFromEnv();
+  let parsed;
+  try {
+    parsed = new URL(redisUrl);
+  } catch {
+    fail(
+      `REDIS_URL is invalid: ${redisUrl}`,
+      "Set REDIS_URL to a Redis connection string, e.g. `redis://localhost:6379/0`",
+    );
+    return;
+  }
+  if (parsed.protocol !== "redis:" && parsed.protocol !== "rediss:") {
+    fail(
+      `REDIS_URL must use redis:// or rediss://, got ${parsed.protocol}`,
+      "Set REDIS_URL to a Redis connection string, e.g. `redis://localhost:6379/0`",
+    );
+    return;
+  }
+  const host = parsed.hostname || "localhost";
+  const port = Number(parsed.port || 6379);
+  if (!(await canConnect(port, host))) {
+    fail(
+      `Redis queue is not reachable at ${host}:${port}`,
+      "Start Redis locally (`redis-server`) or set REDIS_URL to a reachable Redis instance. Narration jobs run through Redis/RQ.",
+    );
+  }
+}
+
 // We probe the wildcard interfaces (0.0.0.0 and ::) because that's what
 // `next dev` and `uvicorn` actually try to bind to. Probing only the
 // loopbacks misses the common case (on macOS) where a process bound to
@@ -249,6 +301,7 @@ async function main() {
   checkFfmpeg();
   checkVenv();
   checkEnv();
+  await checkRedis();
   await Promise.all(PORTS_TO_CHECK.map(checkPort));
 
   if (failures.length === 0 && warnings.length === 0) {

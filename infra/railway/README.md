@@ -1,11 +1,12 @@
 # Railway Deployment
 
-Deploy both services (web + api) on Railway.
+Deploy the web, API, worker, and Redis services on Railway.
 
 ## Setup
 
 1. Create a new Railway project
-2. Add two services from the same repo:
+2. Add Redis to the project.
+3. Add three services from the same repo:
 
 ### Web Service (Next.js)
 - **Root Directory**: `apps/web`
@@ -22,6 +23,12 @@ Deploy both services (web + api) on Railway.
   `nixpacksPlan.phases.setup.aptPkgs = ["ffmpeg"]`) or a Dockerfile that installs it.
   Without ffmpeg, chapters still render but the master is skipped.
 
+### Worker Service (RQ)
+- **Root Directory**: `services/api`
+- **Build Command**: `pip install -r requirements.txt`
+- **Start Command**: `python worker.py`
+- **ffmpeg**: install it here too. Master assembly runs in the worker, not the API.
+
 ## Environment Variables
 
 Set these on the API service:
@@ -37,7 +44,10 @@ Set these on the API service:
 | `OPENAI_API_KEY` | OpenAI key (for the default provider) |
 | `ELEVENLABS_API_KEY` | ElevenLabs key (only if `TTS_PROVIDER=elevenlabs`; also `pip install elevenlabs`) |
 | `TTS_DEFAULT_VOICE` | Optional default narrator voice id |
+| `REDIS_URL` | Railway Redis connection string |
 | `API_CORS_ORIGINS` | Your web service URL (e.g., `https://web-production-xxx.up.railway.app`) |
+
+Set the same B2, TTS, `REDIS_URL`, and ffmpeg configuration on the Worker service.
 
 Set this on the Web service:
 

@@ -1,4 +1,4 @@
-<!-- last_verified: 2026-06-02 -->
+<!-- last_verified: 2026-06-25 -->
 # App Workflows
 
 User journeys inside the application.
@@ -10,7 +10,7 @@ User journeys inside the application.
 - The chapter preview shows how the text will split (estimate, mirrors backend rules)
 - User picks a narrator voice from the provider catalog (`GET /voices`)
 - Clicks **Generate** → `POST /books` splits the text, writes `source.txt` + an initial
-  manifest, and starts narration in the background
+  manifest, and enqueues a durable narration job
 - User is redirected to `/library?book=<id>` to watch progress
 - See: [Chapter Narration](features/narration.md), [Chapter Detection](features/chapter-detection.md)
 

@@ -19,6 +19,6 @@ export API_CORS_ORIGIN_REGEX='^http://localhost:[0-9]+$'
 
 exec pnpm exec concurrently \
   --kill-others-on-fail \
-  --names web,api \
-  --prefix-colors blue,green \
-  "pnpm dev:web" "pnpm dev:api"
+  --names web,api,worker \
+  --prefix-colors blue,green,magenta \
+  "pnpm dev:web" "pnpm dev:api" "pnpm dev:worker"

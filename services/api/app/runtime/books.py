@@ -1,8 +1,8 @@
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, HTTPException
 
-from app.repo import TTSError
+from app.repo import JobQueueError, TTSError
 from app.service.books import (
     BookKeyError,
     BookNotFoundError,
@@ -14,7 +14,7 @@ from app.service.books import (
     list_books,
     master_download_url,
 )
-from app.service.narration import create_book, list_voices, run_narration
+from app.service.narration import create_book, enqueue_narration_job, list_voices
 from app.types import (
     BookDetail,
     BookStats,
@@ -55,17 +55,18 @@ async def book_activity_endpoint(days: int = 7):
 
 
 @router.post("/books", response_model=BookDetail, status_code=202)
-async def create_book_endpoint(
-    request: CreateBookRequest, background_tasks: BackgroundTasks
-):
+async def create_book_endpoint(request: CreateBookRequest):
     try:
         book = create_book(request)
+        enqueue_narration_job(book.id)
     except TTSError as e:
         raise HTTPException(status_code=502, detail=str(e)) from None
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
-    # Render in the background; the client polls GET /books/{id} for progress.
-    background_tasks.add_task(run_narration, book.id)
+    except JobQueueError as e:
+        detail = f"Narration queue unavailable: {e}"
+        raise HTTPException(status_code=503, detail=detail) from None
+    # Render in the durable worker; the client polls GET /books/{id} for progress.
     logger.info("Audiobook created: id=%s chapters=%d", book.id, book.chapter_count)
     return get_book(book.id)
 

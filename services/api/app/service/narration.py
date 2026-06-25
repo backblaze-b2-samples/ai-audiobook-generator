@@ -1,15 +1,15 @@
 """Narration job orchestration — single narrator voice.
 
 create_book() splits the manuscript, writes source.txt + the initial manifest
-(status pending), and returns immediately. run_narration() is the long-running
-worker (kicked off via FastAPI BackgroundTasks): per chapter it synthesizes
-audio, writes the chapter MP3, reads its duration, and rewrites the manifest;
-when every chapter is rendered it assembles the M4B master and marks the book
-complete. The manifest in B2 is rewritten after each step so progress survives
-reads from the API while a job is in flight.
+(status pending), and returns immediately. enqueue_narration_job() places the
+book id on the durable Redis/RQ queue. run_narration() is the long-running
+worker function: per chapter it synthesizes audio, writes the chapter MP3,
+reads its duration, and rewrites the manifest; when every chapter is rendered
+it assembles the M4B master and marks the book complete.
 
-Limitation: BackgroundTasks run in-process. A server restart loses in-flight
-jobs (documented in docs/RELIABILITY.md). The manifest itself is durable.
+The manifest in B2 is the record of truth and is rewritten after each step.
+Queue workers can safely restart the same book because complete chapters are
+skipped and pending/rendering/failed chapters are resumed from manifest state.
 """
 
 import logging
@@ -20,6 +20,7 @@ from app.repo import (
     AudioAssemblyError,
     TTSError,
     assemble_master,
+    enqueue_narration,
     get_provider,
     put_bytes,
     read_object,
@@ -31,6 +32,12 @@ from app.types import Book, BookDetail, CreateBookRequest, NarrationStatus, Voic
 
 logger = logging.getLogger(__name__)
 
+INCOMPLETE_STATUSES = {
+    NarrationStatus.PENDING,
+    NarrationStatus.RENDERING,
+    NarrationStatus.ASSEMBLING,
+}
+
 
 def _now() -> datetime:
     return datetime.now(UTC)
@@ -39,8 +46,7 @@ def _now() -> datetime:
 def create_book(request: CreateBookRequest) -> Book:
     """Create a book, persist source + initial manifest, return the Book.
 
-    Does NOT render audio — call run_narration(book.id) afterwards (the router
-    schedules it as a background task).
+    Does NOT render audio — enqueue the returned id with enqueue_narration_job().
     """
     chapters = split_into_chapters(request.text)
     if not chapters:
@@ -67,6 +73,23 @@ def create_book(request: CreateBookRequest) -> Book:
     return book
 
 
+def enqueue_narration_job(book_id: str) -> str:
+    """Queue a durable narration job for a persisted book manifest."""
+    books_service.validate_book_id(book_id)
+    return enqueue_narration(book_id)
+
+
+def enqueue_resume_candidates() -> int:
+    """Requeue incomplete books found in B2 when a worker starts."""
+    queued = 0
+    for book in books_service.list_books():
+        if book.status not in INCOMPLETE_STATUSES:
+            continue
+        enqueue_narration_job(book.id)
+        queued += 1
+    return queued
+
+
 def _touch(book: Book) -> None:
     book.updated_at = _now()
     books_service.save_manifest(book)
@@ -90,9 +113,15 @@ def _repopulate_chapter_text(book: Book) -> None:
 
 
 def run_narration(book_id: str) -> None:
-    """Render every chapter, then assemble the master. Idempotent-ish: re-runs
-    skip chapters already marked complete."""
+    """Render every chapter, then assemble the master.
+
+    Re-runs skip chapters already marked complete.
+    """
     book = books_service.load_manifest(book_id)
+    if book.status == NarrationStatus.COMPLETE:
+        logger.info("Narration already complete for book %s", book_id)
+        return
+
     provider = get_provider()
 
     book.status = NarrationStatus.RENDERING
@@ -104,6 +133,9 @@ def run_narration(book_id: str) -> None:
         for chapter in book.chapters:
             if chapter.status == NarrationStatus.COMPLETE and chapter.audio_key:
                 continue
+            chapter.status = NarrationStatus.RENDERING
+            chapter.error = None
+            _touch(book)
             audio = provider.synthesize(chapter.text, book.voice_id)
             key = books_service.chapter_key(book_id, chapter.index)
             put_bytes(audio, key, "audio/mpeg")
@@ -114,6 +146,13 @@ def run_narration(book_id: str) -> None:
             chapter.error = None
             _touch(book)
     except TTSError as e:
+        current = next(
+            (c for c in book.chapters if c.status == NarrationStatus.RENDERING),
+            None,
+        )
+        if current:
+            current.status = NarrationStatus.FAILED
+            current.error = str(e)
         book.status = NarrationStatus.FAILED
         book.error = str(e)
         _touch(book)

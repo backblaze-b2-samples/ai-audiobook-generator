@@ -1,19 +1,22 @@
-<!-- last_verified: 2026-06-02 -->
+<!-- last_verified: 2026-06-25 -->
 # Reliability
 
 Reliability expectations and practices for this project.
 
-## Narration Jobs (in-process — known limitation)
+## Narration Jobs (durable queue)
 
-- Narration runs as a FastAPI **BackgroundTask** in the API process. This is simple
-  and dependency-free, but **a server restart loses any in-flight job**: the manifest
-  is left at `rendering`/`assembling` and the worker does not auto-resume.
+- Narration runs through Redis/RQ. `POST /books` writes `source.txt` and
+  `manifest.json`, then enqueues a stable `narration:<book-id>` job for the worker.
+- The API process no longer owns in-flight work. If the API restarts, queued jobs
+  remain in Redis and the worker keeps using the manifest in B2 as the source of truth.
+- Worker startup scans manifests for books in `pending`, `rendering`, and
+  `assembling`, then re-enqueues them. This covers deploys or worker restarts where
+  Redis no longer has an active job but B2 still shows incomplete work.
+- `run_narration` skips chapters already marked `complete` with an `audio_key`; pending,
+  rendering, or failed chapters are retried from the durable source manuscript.
 - **What survives**: everything already written to B2 — `source.txt`, the manifest, and
-  every chapter MP3 rendered so far. Nothing is lost from B2; only the in-memory job is.
-- `run_narration` is written to skip chapters already marked `complete`, so a manual
-  re-trigger would resume rather than re-render — but there is no automatic resume in v1.
-- Production hardening (tracked in `docs/exec-plans/tech-debt-tracker.md`): move to a
-  durable worker/queue and resume from the manifest's per-chapter status.
+  every chapter MP3 rendered so far. Reruns resume from that per-chapter state rather
+  than starting over.
 
 ## Manifest Durability
 

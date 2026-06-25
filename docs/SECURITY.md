@@ -1,4 +1,4 @@
-<!-- last_verified: 2026-06-02 -->
+<!-- last_verified: 2026-06-25 -->
 # Security
 
 Security principles and implementation for the AI Audiobook Generator.
@@ -10,6 +10,8 @@ Security principles and implementation for the AI Audiobook Generator.
 - **API -> TTS provider**: provider key (`OPENAI_API_KEY` / `ELEVENLABS_API_KEY`) read
   from env and used **only** in `repo/tts/`. It never reaches the client and never
   enters a B2 object or manifest.
+- **API / worker -> Redis**: `REDIS_URL` is read from env and used only by the
+  queue adapter in `repo/job_queue.py`. It carries job ids, not manuscript text.
 - **Client -> B2 (download)**: presigned URLs forcing `Content-Disposition: attachment`
   (master M4B, file downloads)
 - **Client -> B2 (stream)**: presigned URLs **without** forced disposition for inline
@@ -48,7 +50,8 @@ Security principles and implementation for the AI Audiobook Generator.
 
 ## Secrets Management
 
-- All secrets (B2 keys, TTS provider keys) loaded via environment variables (pydantic-settings)
+- All secrets (B2 keys, TTS provider keys, Redis credentials) loaded via environment
+  variables (pydantic-settings)
 - Never committed to source control
 - `.env.example` documents required variables with placeholder values only
 

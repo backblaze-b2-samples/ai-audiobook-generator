@@ -22,16 +22,25 @@ from app.repo.books_store import (
     read_object,
     write_json,
 )
+from app.repo.job_queue import (
+    JobQueueError,
+    check_queue_connectivity,
+    enqueue_narration,
+    run_worker,
+)
 from app.repo.tts import TTSError, TTSProvider, get_provider
 
 __all__ = [
     "AudioAssemblyError",
+    "JobQueueError",
     "TTSError",
     "TTSProvider",
     "assemble_master",
     "check_connectivity",
+    "check_queue_connectivity",
     "delete_file",
     "delete_prefix",
+    "enqueue_narration",
     "ffmpeg_available",
     "get_file_metadata",
     "get_presigned_url",
@@ -44,6 +53,7 @@ __all__ = [
     "put_bytes",
     "read_json",
     "read_object",
+    "run_worker",
     "upload_file",
     "write_json",
 ]

@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 from app.repo.tts.base import TTSProvider
 from app.service import narration as narration_service
-from app.types import CreateBookRequest, NarrationStatus, Voice
+from app.types import BookSummary, CreateBookRequest, NarrationStatus, Voice
 
 
 class FakeProvider(TTSProvider):
@@ -110,6 +110,38 @@ def test_run_narration_synthesizes_real_chapter_text(monkeypatch):
     assert "Second body." in captured[1]
 
 
+def test_run_narration_resumes_from_chapter_status(monkeypatch):
+    objects, _ = _install_fakes(monkeypatch)
+    captured: list[str] = []
+
+    class CapturingProvider(FakeProvider):
+        def synthesize(self, text, voice_id):
+            captured.append(text)
+            return super().synthesize(text, voice_id)
+
+    req = CreateBookRequest(
+        title="Resume",
+        text="Chapter 1\nAlready rendered.\n\nChapter 2\nNeeds render.",
+    )
+    book = narration_service.create_book(req)
+    book.chapters[0].status = NarrationStatus.COMPLETE
+    book.chapters[0].audio_key = "audiobooks/fake/chapters/ch-001.mp3"
+    book.chapters[0].duration_seconds = 3.0
+    objects[book.chapters[0].audio_key] = b"ALREADY_RENDERED"
+
+    from app.service import books as books_service
+
+    books_service.save_manifest(book)
+    monkeypatch.setattr(narration_service, "get_provider", lambda: CapturingProvider())
+
+    narration_service.run_narration(book.id)
+
+    final = narration_service.get_book_detail(book.id)
+    assert final.status == NarrationStatus.COMPLETE
+    assert final.chapters_rendered == 2
+    assert captured == ["Needs render."]
+
+
 def test_run_narration_fails_when_source_missing(monkeypatch):
     """If source.txt is gone the job fails cleanly rather than sending empty
     text to the provider."""
@@ -143,6 +175,62 @@ def test_run_narration_marks_failed_on_tts_error(monkeypatch):
     final = narration_service.get_book_detail(book.id)
     assert final.status == NarrationStatus.FAILED
     assert "provider down" in (final.error or "")
+    assert final.chapters[0].status == NarrationStatus.FAILED
+    assert "provider down" in (final.chapters[0].error or "")
+
+
+def test_enqueue_resume_candidates_queues_only_incomplete_books(monkeypatch):
+    now = datetime.now(UTC)
+    summaries = [
+        BookSummary(
+            id="12345678-1234-1234-1234-123456789abc",
+            title="Pending",
+            status=NarrationStatus.PENDING,
+            chapter_count=1,
+            chapters_rendered=0,
+            duration_seconds=0.0,
+            duration_human="0s",
+            created_at=now,
+        ),
+        BookSummary(
+            id="22345678-1234-1234-1234-123456789abc",
+            title="Rendering",
+            status=NarrationStatus.RENDERING,
+            chapter_count=2,
+            chapters_rendered=1,
+            duration_seconds=12.0,
+            duration_human="12s",
+            created_at=now,
+        ),
+        BookSummary(
+            id="32345678-1234-1234-1234-123456789abc",
+            title="Complete",
+            status=NarrationStatus.COMPLETE,
+            chapter_count=1,
+            chapters_rendered=1,
+            duration_seconds=12.0,
+            duration_human="12s",
+            created_at=now,
+        ),
+    ]
+
+    from app.service import books as books_service
+
+    queued: list[str] = []
+    monkeypatch.setattr(books_service, "list_books", lambda: summaries)
+    monkeypatch.setattr(
+        narration_service,
+        "enqueue_narration",
+        lambda book_id: queued.append(book_id),
+    )
+
+    count = narration_service.enqueue_resume_candidates()
+
+    assert count == 2
+    assert queued == [
+        "12345678-1234-1234-1234-123456789abc",
+        "22345678-1234-1234-1234-123456789abc",
+    ]
 
 
 def test_list_voices_uses_provider(monkeypatch):
