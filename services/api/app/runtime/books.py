@@ -38,26 +38,26 @@ router = APIRouter()
 @router.get("/voices", response_model=list[Voice])
 async def list_voices_endpoint():
     try:
-        return list_voices()
+        return await run_in_threadpool(list_voices)
     except TTSError as e:
         raise HTTPException(status_code=502, detail=str(e)) from None
 
 
 @router.get("/books", response_model=list[BookSummary])
 async def list_books_endpoint():
-    return list_books()
+    return await run_in_threadpool(list_books)
 
 
 @router.get("/books/stats", response_model=BookStats)
 async def book_stats_endpoint():
-    return book_stats()
+    return await run_in_threadpool(book_stats)
 
 
 @router.get("/books/stats/activity", response_model=list[DailyNarrationHours])
 async def book_activity_endpoint(days: int = 7):
     if days < 1 or days > 90:
         raise HTTPException(status_code=400, detail="Days must be between 1 and 90")
-    return book_activity(days=days)
+    return await run_in_threadpool(book_activity, days=days)
 
 
 @router.post("/books", response_model=BookDetail, status_code=202)
@@ -84,13 +84,13 @@ async def create_book_endpoint(request: CreateBookRequest):
         raise HTTPException(status_code=503, detail="Narration queue unavailable") from None
     # Render in the durable worker; the client polls GET /books/{id} for progress.
     logger.info("Audiobook created: id=%s chapters=%d", book.id, book.chapter_count)
-    return get_book(book.id)
+    return await run_in_threadpool(get_book, book.id)
 
 
 @router.get("/books/{book_id}", response_model=BookDetail)
 async def get_book_endpoint(book_id: str):
     try:
-        return get_book(book_id)
+        return await run_in_threadpool(get_book, book_id)
     except BookKeyError as e:
         raise HTTPException(status_code=400, detail=e.detail) from None
     except BookNotFoundError as e:
@@ -100,7 +100,7 @@ async def get_book_endpoint(book_id: str):
 @router.delete("/books/{book_id}")
 async def delete_book_endpoint(book_id: str):
     try:
-        get_book(book_id)
+        await run_in_threadpool(get_book, book_id)
         await run_in_threadpool(cancel_narration_for_book, book_id)
         deleted = await run_in_threadpool(delete_book, book_id)
     except BookKeyError as e:
@@ -121,7 +121,7 @@ async def delete_book_endpoint(book_id: str):
 @router.get("/books/{book_id}/master/download")
 async def download_master_endpoint(book_id: str):
     try:
-        url = master_download_url(book_id)
+        url = await run_in_threadpool(master_download_url, book_id)
     except BookKeyError as e:
         raise HTTPException(status_code=400, detail=e.detail) from None
     except BookNotFoundError as e:
@@ -132,7 +132,7 @@ async def download_master_endpoint(book_id: str):
 @router.get("/books/{book_id}/chapters/{index}/stream")
 async def stream_chapter_endpoint(book_id: str, index: int):
     try:
-        url = chapter_stream_url(book_id, index)
+        url = await run_in_threadpool(chapter_stream_url, book_id, index)
     except BookKeyError as e:
         raise HTTPException(status_code=400, detail=e.detail) from None
     except BookNotFoundError as e:
