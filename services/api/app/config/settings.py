@@ -32,8 +32,14 @@ class Settings(BaseSettings):
     narration_job_failure_ttl_seconds: int = 7 * 24 * 60 * 60
     narration_lease_ttl_seconds: int = 10 * 60
     narration_tombstone_ttl_seconds: int = 24 * 60 * 60
-    narration_resume_scan_limit: int = 100
+    narration_resume_scan_enabled: bool = False
+    narration_resume_scan_batch_size: int = 100
     narration_resume_scan_lease_ttl_seconds: int = 15 * 60
+
+    # Minimal tenant auth for audiobook routes. Format:
+    # "owner-a:token-a,owner-b:token-b". The frontend sends the matching
+    # NEXT_PUBLIC_BOOK_OWNER and NEXT_PUBLIC_BOOK_TOKEN values.
+    book_auth_tokens: str = "local-dev:dev-book-token"
 
     api_port: int = 8000
     # Explicit allowlist by default — covers Next on :3000 and the

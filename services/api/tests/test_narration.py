@@ -245,6 +245,27 @@ def test_run_narration_retries_transient_tts_error(monkeypatch):
     assert attempts == 2
 
 
+def test_run_narration_marks_failed_on_final_worker_error(monkeypatch):
+    _install_fakes(monkeypatch)
+    req = CreateBookRequest(title="B2 Fail", text="Chapter 1\nA.")
+    book = narration_service.create_book(req)
+    monkeypatch.setattr(narration_service, "current_job_retries_left", lambda: 0)
+    monkeypatch.setattr(
+        narration_service,
+        "put_bytes",
+        lambda data, key, content_type: (_ for _ in ()).throw(
+            RuntimeError("redis://private-host should not leak")
+        ),
+    )
+
+    narration_service.run_narration(book.id)
+
+    final = narration_service.get_book_detail(book.id)
+    assert final.status == NarrationStatus.FAILED
+    assert final.error == "Worker failure: RuntimeError"
+    assert "private-host" not in final.error
+
+
 def test_run_narration_does_not_retry_missing_source(monkeypatch):
     objects, _ = _install_fakes(monkeypatch)
     req = CreateBookRequest(title="Missing Source", text="Chapter 1\nA.")
@@ -278,7 +299,10 @@ def test_run_narration_exits_when_book_lease_unavailable(monkeypatch, caplog):
         ),
     )
 
-    with caplog.at_level("INFO", logger=narration_service.logger.name):
+    with (
+        caplog.at_level("INFO", logger=narration_service.logger.name),
+        pytest.raises(JobLeaseError),
+    ):
         narration_service.run_narration(book.id)
 
     final = narration_service.get_book_detail(book.id)
@@ -327,7 +351,7 @@ def test_enqueue_resume_candidates_queues_only_incomplete_books(monkeypatch):
 
     queued: list[tuple[str, tuple, str]] = []
     by_id = {summary.id: summary for summary in summaries}
-    monkeypatch.setattr(books_service, "list_book_ids", lambda limit=None: list(by_id))
+    monkeypatch.setattr(books_service, "list_book_ids", lambda: list(by_id))
     monkeypatch.setattr(books_service, "load_manifest", lambda book_id: by_id[book_id])
     monkeypatch.setattr(
         narration_service,
@@ -350,6 +374,44 @@ def test_enqueue_resume_candidates_queues_only_incomplete_books(monkeypatch):
             "narration:22345678-1234-1234-1234-123456789abc",
         ),
     ]
+
+
+def test_enqueue_resume_candidates_scans_beyond_first_batch(monkeypatch):
+    now = datetime.now(UTC)
+    ids = [f"{i:08x}-1234-1234-1234-123456789abc" for i in range(150)]
+    pending_id = ids[-1]
+
+    from app.service import books as books_service
+
+    def load_manifest(book_id):
+        return BookSummary(
+            id=book_id,
+            title=book_id,
+            status=(
+                NarrationStatus.PENDING
+                if book_id == pending_id
+                else NarrationStatus.COMPLETE
+            ),
+            chapter_count=1,
+            chapters_rendered=0,
+            duration_seconds=0.0,
+            duration_human="0s",
+            created_at=now,
+        )
+
+    queued: list[str] = []
+    monkeypatch.setattr(books_service, "list_book_ids", lambda: ids)
+    monkeypatch.setattr(books_service, "load_manifest", load_manifest)
+    monkeypatch.setattr(
+        narration_service,
+        "enqueue_job",
+        lambda target, args, job_id: queued.append(job_id),
+    )
+
+    count = narration_service.enqueue_resume_candidates(batch_size=100)
+
+    assert count == 1
+    assert queued == [f"narration:{pending_id}"]
 
 
 def test_list_voices_uses_provider(monkeypatch):

@@ -41,13 +41,14 @@ chapter with a TTS provider, and assemble a final master — all stored in B2.
   → mark `complete` and rewrite manifest
 - All chapters done → status `assembling` → assemble M4B → write `master.m4b` →
   status `complete`
-- Worker startup starts queue consumption immediately and runs a bounded resume scan
-  under a Redis lease, re-enqueueing `pending`, `rendering`, and `assembling` books
-  from per-chapter manifest state
+- Worker startup starts queue consumption immediately. If
+  `NARRATION_RESUME_SCAN_ENABLED=true`, a background scan walks every audiobook
+  manifest under a Redis lease and re-enqueues `pending`, `rendering`, and
+  `assembling` books from per-chapter manifest state.
 - Each running job holds a per-book Redis lease and checks a delete tombstone before
-  writes; duplicate jobs exit when the lease is busy
-- Transient TTS failures raise back to RQ while retries remain; a book is marked
-  `failed` only after the retry budget is exhausted
+  writes; lease contention raises back to RQ so the job retries.
+- Transient TTS and other worker failures raise back to RQ while retries remain; a
+  book is marked `failed` only after the retry budget is exhausted.
 - A single narrator voice narrates the whole book (multi-voice is out of scope for v1)
 
 ## Edge Cases
@@ -57,7 +58,8 @@ chapter with a TTS provider, and assemble a final master — all stored in B2.
 - Transient TTS failure with retries left → status remains `rendering` and RQ retries
 - ffmpeg missing → chapters still complete; book is `complete` with a "master skipped" note
 - Missing `source.txt` at narration time → book status `failed` (text cannot be repopulated)
-- Server restart → queued work and worker startup resume incomplete manifests from B2
+- Server restart → queued work survives in Redis, and worker resume scan can restore
+  incomplete manifests from B2 after the deploy flag is enabled
 - Delete while rendering → tombstone causes the worker to stop before later writes
 
 ## UX States
@@ -69,8 +71,8 @@ chapter with a TTS provider, and assemble a final master — all stored in B2.
 - Required cases: create writes source+manifest, full render+master, chapter text
   repopulated from source.txt before synthesize (non-empty), resume skips complete
   chapters, transient TTS retry, missing source → failed, terminal TTS failure →
-  failed, voice listing, resume candidate enqueueing, forged job target rejection,
-  enqueue-failure cleanup
+  failed, voice listing, all-prefix resume candidate enqueueing, forged job target
+  rejection, stale/poisoned job replacement, enqueue-failure cleanup, owner auth
 - Quick verify command: `pnpm test:api`
 - Full verify command: `pnpm lint && pnpm lint:api && pnpm test:api && pnpm check:structure`
 - Pass criteria: pytest green, ruff clean

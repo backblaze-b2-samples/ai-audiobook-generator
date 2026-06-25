@@ -62,7 +62,7 @@ def test_resume_scan_queue_error_logs_safely(monkeypatch, caplog):
     monkeypatch.setattr(
         worker,
         "enqueue_resume_candidates",
-        lambda limit: (_ for _ in ()).throw(
+        lambda batch_size: (_ for _ in ()).throw(
             worker.JobQueueError("redis://private-host:6379 timed out")
         ),
     )
@@ -73,3 +73,43 @@ def test_resume_scan_queue_error_logs_safely(monkeypatch, caplog):
     assert lease.released is True
     assert "private-host" not in caplog.text
     assert "JobQueueError" in caplog.text
+
+
+def test_worker_resume_scan_requires_flag(monkeypatch):
+    starts = 0
+
+    class CountingThread:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            nonlocal starts
+            starts += 1
+
+    monkeypatch.setattr(worker.settings, "narration_resume_scan_enabled", False)
+    monkeypatch.setattr(worker, "Thread", CountingThread)
+    monkeypatch.setattr(worker, "run_worker", lambda allowed_targets: None)
+
+    worker.main()
+
+    assert starts == 0
+
+
+def test_worker_resume_scan_starts_when_flag_enabled(monkeypatch):
+    starts = 0
+
+    class CountingThread:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            nonlocal starts
+            starts += 1
+
+    monkeypatch.setattr(worker.settings, "narration_resume_scan_enabled", True)
+    monkeypatch.setattr(worker, "Thread", CountingThread)
+    monkeypatch.setattr(worker, "run_worker", lambda allowed_targets: None)
+
+    worker.main()
+
+    assert starts == 1

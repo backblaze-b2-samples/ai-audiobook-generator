@@ -3,6 +3,7 @@
 import pytest
 from redis.exceptions import RedisError
 from rq import Worker
+from rq.job import JobStatus
 
 from app.repo import job_queue as job_queue_repo
 from app.repo.job_queue import (
@@ -116,3 +117,89 @@ def test_enqueue_job_uses_rq_2_compatible_options(monkeypatch):
     assert job_queue_repo.enqueue_job("app.service.narration.run_narration", (), "job") == "job"
     assert queue.enqueue_kwargs is not None
     assert "unique" not in queue.enqueue_kwargs
+
+
+def test_enqueue_job_reuses_valid_queued_job(monkeypatch):
+    class ExistingJob:
+        id = "narration:book-id"
+        func_name = "app.service.narration.run_narration"
+        args = ("book-id",)
+
+        def __init__(self):
+            self.kwargs = {}
+
+        def get_status(self, refresh=False):
+            return JobStatus.QUEUED
+
+    class FakeQueue:
+        def fetch_job(self, job_id):
+            return ExistingJob()
+
+    monkeypatch.setattr(job_queue_repo, "_connection", lambda: object())
+    monkeypatch.setattr(job_queue_repo, "_queue", lambda connection: FakeQueue())
+
+    job_id = job_queue_repo.enqueue_job(
+        "app.service.narration.run_narration",
+        ("book-id",),
+        "narration:book-id",
+    )
+
+    assert job_id == "narration:book-id"
+
+
+@pytest.mark.parametrize(
+    ("status", "func_name", "args", "existing_id"),
+    [
+        (JobStatus.STARTED, "app.service.narration.run_narration", ("book-id",), "narration:book-id"),
+        (JobStatus.QUEUED, "os.system", ("book-id",), "narration:book-id"),
+        (JobStatus.QUEUED, "app.service.narration.run_narration", ("other",), "narration:book-id"),
+        (JobStatus.QUEUED, "app.service.narration.run_narration", ("book-id",), "narration:other"),
+    ],
+)
+def test_enqueue_job_replaces_stale_or_poisoned_active_jobs(
+    monkeypatch, status, func_name, args, existing_id
+):
+    class ExistingJob:
+        id = existing_id
+
+        def __init__(self):
+            self.func_name = func_name
+            self.args = args
+            self.kwargs = {}
+            self.deleted = False
+            self.canceled = False
+
+        def get_status(self, refresh=False):
+            return status
+
+        def cancel(self):
+            self.canceled = True
+
+        def delete(self):
+            self.deleted = True
+
+    class NewJob:
+        id = "narration:book-id"
+
+    class FakeQueue:
+        existing = ExistingJob()
+
+        def fetch_job(self, job_id):
+            return self.existing
+
+        def enqueue_call(self, **kwargs):
+            return NewJob()
+
+    queue = FakeQueue()
+    monkeypatch.setattr(job_queue_repo, "_connection", lambda: object())
+    monkeypatch.setattr(job_queue_repo, "_queue", lambda connection: queue)
+
+    job_id = job_queue_repo.enqueue_job(
+        "app.service.narration.run_narration",
+        ("book-id",),
+        "narration:book-id",
+    )
+
+    assert job_id == "narration:book-id"
+    assert queue.existing.canceled is True
+    assert queue.existing.deleted is True

@@ -22,6 +22,7 @@ ACTIVE_STATUSES = {
     JobStatus.DEFERRED,
     JobStatus.SCHEDULED,
 }
+DEDUPABLE_STATUSES = ACTIVE_STATUSES - {JobStatus.STARTED}
 TASK_SERIALIZER = JSONSerializer
 JobValidator = Callable[[tuple, dict], None]
 
@@ -86,6 +87,21 @@ def _queue(connection: Redis | None = None) -> Queue:
     )
 
 
+def _job_matches(job, target: str, args: tuple, job_id: str) -> bool:
+    return (
+        getattr(job, "id", None) == job_id
+        and getattr(job, "func_name", None) == target
+        and tuple(getattr(job, "args", ())) == tuple(args)
+        and not getattr(job, "kwargs", {})
+    )
+
+
+def _discard_existing_job(job) -> None:
+    if getattr(job, "cancel", None):
+        job.cancel()
+    job.delete()
+
+
 def enqueue_job(target: str, args: tuple, job_id: str) -> str:
     """Queue a durable job and return the stable RQ job id."""
     connection = _connection()
@@ -93,10 +109,14 @@ def enqueue_job(target: str, args: tuple, job_id: str) -> str:
 
     try:
         existing = queue.fetch_job(job_id)
-        if existing and existing.get_status(refresh=True) in ACTIVE_STATUSES:
-            return existing.id
         if existing:
-            existing.delete()
+            status = existing.get_status(refresh=True)
+            if (
+                status in DEDUPABLE_STATUSES
+                and _job_matches(existing, target, args, job_id)
+            ):
+                return existing.id
+            _discard_existing_job(existing)
 
         job = queue.enqueue_call(
             func=target,

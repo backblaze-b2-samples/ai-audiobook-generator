@@ -11,6 +11,11 @@ async def client():
         yield ac
 
 
+@pytest.fixture
+def auth_headers():
+    return {"X-Book-Owner": "local-dev", "X-Book-Token": "dev-book-token"}
+
+
 @pytest.fixture(autouse=True)
 def isolate_download_counter(tmp_path, monkeypatch):
     """Redirect the persisted download counter to a temp file per test and

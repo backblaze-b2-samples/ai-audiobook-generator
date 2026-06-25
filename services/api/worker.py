@@ -36,7 +36,9 @@ def _resume_existing_books() -> None:
         return
 
     try:
-        queued = enqueue_resume_candidates(limit=settings.narration_resume_scan_limit)
+        queued = enqueue_resume_candidates(
+            batch_size=settings.narration_resume_scan_batch_size
+        )
         logger.info("Queued %d incomplete narration jobs", queued)
     except (JobLeaseError, JobQueueError) as e:
         logger.error("Resume scan failed: error_type=%s", type(e).__name__)
@@ -47,7 +49,10 @@ def _resume_existing_books() -> None:
 
 
 def main() -> None:
-    Thread(target=_resume_existing_books, name="resume-scan", daemon=True).start()
+    if settings.narration_resume_scan_enabled:
+        Thread(target=_resume_existing_books, name="resume-scan", daemon=True).start()
+    else:
+        logger.info("Resume scan disabled")
     try:
         run_worker(ALLOWED_TARGETS)
     except JobQueueError as e:

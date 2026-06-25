@@ -159,6 +159,12 @@ Open `.env` and fill in:
   instead, set `TTS_PROVIDER=elevenlabs`, run `pip install elevenlabs`, and set
   `ELEVENLABS_API_KEY`.
 - Redis queue URL: `REDIS_URL` defaults to `redis://localhost:6379/0`.
+- Audiobook route auth: set `BOOK_AUTH_TOKENS` on the API as
+  `owner-id:strong-token`, and set matching `NEXT_PUBLIC_BOOK_OWNER` and
+  `NEXT_PUBLIC_BOOK_TOKEN` on the web app for this sample deployment.
+- Worker resume scans: leave `NARRATION_RESUME_SCAN_ENABLED=false` while rolling out
+  from any old API instances that used in-process background jobs. Enable it on the
+  worker only after those API instances are drained.
 
 > Walkthroughs: [creating a bucket](https://www.backblaze.com/docs/cloud-storage-create-and-manage-buckets?utm_source=github&utm_medium=referral&utm_campaign=ai_artifacts&utm_content=b2ai-audiobook-generator) ·
 > [creating app keys](https://www.backblaze.com/docs/cloud-storage-create-and-manage-app-keys?utm_source=github&utm_medium=referral&utm_campaign=ai_artifacts&utm_content=b2ai-audiobook-generator).

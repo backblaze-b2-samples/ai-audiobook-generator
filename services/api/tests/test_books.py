@@ -6,6 +6,7 @@ import pytest
 
 from app.service import books as books_service
 from app.service.books import (
+    BookAccessError,
     BookKeyError,
     BookNotFoundError,
     chapter_key,
@@ -101,3 +102,51 @@ def test_book_detail_exposes_derived_fields(monkeypatch):
     assert detail.chapters_rendered == 1
     assert detail.duration_human == "1h 1m"
     assert detail.chapters[0].duration_seconds == 3661.0
+
+
+def test_book_owner_authorization_filters_and_denies(monkeypatch):
+    now = datetime.now(UTC)
+    other_id = "abcdef12-1234-1234-1234-123456789abc"
+    mine = Book(
+        id=VALID_ID,
+        owner_id="user-a",
+        title="Mine",
+        voice_id="alloy",
+        chapters=[Chapter(index=0, title="One", char_count=5)],
+        created_at=now,
+        updated_at=now,
+    )
+    other = Book(
+        id=other_id,
+        owner_id="user-b",
+        title="Other",
+        voice_id="alloy",
+        chapters=[Chapter(index=0, title="One", char_count=5, audio_key="chapter.mp3")],
+        master_key="master.m4b",
+        created_at=now,
+        updated_at=now,
+    )
+    manifests = {
+        manifest_key(VALID_ID): mine.model_dump(mode="json"),
+        manifest_key(other_id): other.model_dump(mode="json"),
+    }
+    monkeypatch.setattr(books_service, "read_json", lambda k: manifests.get(k))
+    monkeypatch.setattr(
+        books_service,
+        "list_prefixes",
+        lambda prefix, limit=None: [
+            f"audiobooks/{VALID_ID}/",
+            f"audiobooks/{other_id}/",
+        ],
+    )
+    monkeypatch.setattr(books_service, "delete_prefix", lambda prefix: 1)
+
+    assert [b.id for b in books_service.list_books(owner_id="user-a")] == [VALID_ID]
+    with pytest.raises(BookAccessError):
+        books_service.get_book(other_id, owner_id="user-a")
+    with pytest.raises(BookAccessError):
+        books_service.master_download_url(other_id, owner_id="user-a")
+    with pytest.raises(BookAccessError):
+        books_service.chapter_stream_url(other_id, 0, owner_id="user-a")
+    with pytest.raises(BookAccessError):
+        books_service.delete_book(other_id, owner_id="user-a")

@@ -6,6 +6,10 @@ Security principles and implementation for the AI Audiobook Generator.
 ## Trust Boundaries
 
 - **Frontend -> API**: CORS-restricted to configured origins, scoped to `GET/POST/DELETE/OPTIONS`
+- **Audiobook route auth**: `/books` list, create, read, stream, download, and delete
+  require `X-Book-Owner` plus `X-Book-Token`. The API validates the token against
+  `BOOK_AUTH_TOKENS` and only returns manifests whose stored `owner_id` matches the
+  authenticated owner.
 - **API -> B2**: Authenticated via `B2_APPLICATION_KEY_ID` + `B2_APPLICATION_KEY`, signature v4
 - **API -> TTS provider**: provider key (`OPENAI_API_KEY` / `ELEVENLABS_API_KEY`) read
   from env and used **only** in `repo/tts/`. It never reaches the client and never
@@ -32,8 +36,10 @@ Security principles and implementation for the AI Audiobook Generator.
 - Book ids: validated against a strict UUID pattern in `service/books.py::validate_book_id`
   **before** they are interpolated into any B2 key, so a request can never escape the
   `audiobooks/<id>/` prefix
-- The bucket is the only access boundary — add prefix scoping if your deployment shares
-  a bucket with other workloads
+- Book ownership is enforced before returning manifest data, issuing presigned
+  chapter/master URLs, tombstoning queued work, or deleting an audiobook prefix.
+- The bucket is still shared infrastructure. Add B2 application-key prefix scoping if
+  your deployment shares the bucket with other workloads.
 
 ## Download Safety
 

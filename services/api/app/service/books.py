@@ -51,6 +51,12 @@ class BookNotFoundError(Exception):
         super().__init__(detail)
 
 
+class BookAccessError(Exception):
+    def __init__(self, detail: str = "Audiobook not found"):
+        self.detail = detail
+        super().__init__(detail)
+
+
 def validate_book_id(book_id: str) -> None:
     if not book_id or not _BOOK_ID_RE.match(book_id):
         raise BookKeyError()
@@ -89,6 +95,11 @@ def load_manifest(book_id: str) -> Book:
     return Book.model_validate(raw)
 
 
+def _require_owner(book: Book, owner_id: str | None) -> None:
+    if owner_id is not None and book.owner_id != owner_id:
+        raise BookAccessError()
+
+
 def _to_detail(book: Book) -> BookDetail:
     return BookDetail(
         id=book.id,
@@ -118,21 +129,25 @@ def _to_detail(book: Book) -> BookDetail:
     )
 
 
-def get_book(book_id: str) -> BookDetail:
-    return _to_detail(load_manifest(book_id))
+def get_book(book_id: str, owner_id: str | None = None) -> BookDetail:
+    book = load_manifest(book_id)
+    _require_owner(book, owner_id)
+    return _to_detail(book)
 
 
-def master_download_url(book_id: str) -> str:
+def master_download_url(book_id: str, owner_id: str | None = None) -> str:
     """Presigned attachment URL for the M4B master. Raises if not assembled."""
     book = load_manifest(book_id)
+    _require_owner(book, owner_id)
     if not book.master_key:
         raise BookNotFoundError("Master not available for this audiobook yet")
     return get_presigned_url(book.master_key, filename=f"{book.title}.m4b")
 
 
-def chapter_stream_url(book_id: str, index: int) -> str:
+def chapter_stream_url(book_id: str, index: int, owner_id: str | None = None) -> str:
     """Presigned inline (non-attachment) URL for streaming a chapter render."""
     book = load_manifest(book_id)
+    _require_owner(book, owner_id)
     match = next((c for c in book.chapters if c.index == index), None)
     if match is None or not match.audio_key:
         raise BookNotFoundError("Chapter audio not available yet")
@@ -148,7 +163,7 @@ def list_book_ids(limit: int | None = None) -> list[str]:
     return [_id_from_prefix(prefix) for prefix in list_prefixes(ROOT_PREFIX, limit=limit)]
 
 
-def list_books(limit: int | None = None) -> list[BookSummary]:
+def list_books(limit: int | None = None, owner_id: str | None = None) -> list[BookSummary]:
     """Scan `audiobooks/` folders and read each manifest into a summary."""
     summaries: list[BookSummary] = []
     for book_id in list_book_ids(limit=limit):
@@ -156,6 +171,8 @@ def list_books(limit: int | None = None) -> list[BookSummary]:
         if raw is None:
             continue
         book = Book.model_validate(raw)
+        if owner_id is not None and book.owner_id != owner_id:
+            continue
         summaries.append(
             BookSummary(
                 id=book.id,
@@ -172,14 +189,14 @@ def list_books(limit: int | None = None) -> list[BookSummary]:
     return summaries
 
 
-def delete_book(book_id: str) -> int:
+def delete_book(book_id: str, owner_id: str | None = None) -> int:
     validate_book_id(book_id)
     # Ensure it exists first so a bad id 404s rather than silently no-ops.
-    load_manifest(book_id)
+    _require_owner(load_manifest(book_id), owner_id)
     return delete_prefix(book_prefix(book_id))
 
 
-def book_stats() -> BookStats:
+def book_stats(owner_id: str | None = None) -> BookStats:
     """Aggregate counts across every audiobook for the dashboard."""
     total_books = 0
     total_chapters = 0
@@ -190,10 +207,16 @@ def book_stats() -> BookStats:
         if raw is None:
             continue
         book = Book.model_validate(raw)
+        if owner_id is not None and book.owner_id != owner_id:
+            continue
         total_books += 1
         total_chapters += book.chapters_rendered
         total_duration += book.duration_seconds
-    total_size = prefix_size(ROOT_PREFIX)
+    total_size = (
+        prefix_size(ROOT_PREFIX)
+        if owner_id is None
+        else sum(prefix_size(book_prefix(book.id)) for book in list_books(owner_id=owner_id))
+    )
     return BookStats(
         total_books=total_books,
         total_chapters=total_chapters,
@@ -204,7 +227,7 @@ def book_stats() -> BookStats:
     )
 
 
-def book_activity(days: int = 7) -> list[DailyNarrationHours]:
+def book_activity(days: int = 7, owner_id: str | None = None) -> list[DailyNarrationHours]:
     """Hours of audio narrated per day over the last N days (dashboard chart).
 
     Attributes each book's total duration to its creation day — a simple,
@@ -220,6 +243,8 @@ def book_activity(days: int = 7) -> list[DailyNarrationHours]:
         if raw is None:
             continue
         book = Book.model_validate(raw)
+        if owner_id is not None and book.owner_id != owner_id:
+            continue
         d = book.created_at.date()
         if d >= cutoff:
             hours_by_day[d.isoformat()] += book.duration_seconds / 3600.0

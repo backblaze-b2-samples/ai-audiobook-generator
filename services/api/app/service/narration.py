@@ -26,24 +26,19 @@ from app.types import Book, BookDetail, CreateBookRequest, NarrationStatus, Voic
 
 logger = logging.getLogger(__name__)
 
-INCOMPLETE_STATUSES = {
-    NarrationStatus.PENDING,
-    NarrationStatus.RENDERING,
-    NarrationStatus.ASSEMBLING,
-}
+INCOMPLETE_STATUSES = {NarrationStatus.PENDING, NarrationStatus.RENDERING, NarrationStatus.ASSEMBLING}
 NARRATION_JOB_TARGET = "app.service.narration.run_narration"
 
 
 class PermanentNarrationError(TTSError):
-    """Raised for non-retryable narration data failures."""
+    pass
 
 
 def _now() -> datetime:
     return datetime.now(UTC)
 
 
-def create_book(request: CreateBookRequest) -> Book:
-    """Create and persist a book without rendering audio."""
+def create_book(request: CreateBookRequest, owner_id: str = "local-dev") -> Book:
     chapters = split_into_chapters(request.text)
     if not chapters:
         raise ValueError("Manuscript produced no chapters (empty text).")
@@ -55,6 +50,7 @@ def create_book(request: CreateBookRequest) -> Book:
     now = _now()
     book = Book(
         id=book_id,
+        owner_id=owner_id,
         title=request.title.strip(),
         status=NarrationStatus.PENDING,
         voice_id=voice_id,
@@ -62,8 +58,6 @@ def create_book(request: CreateBookRequest) -> Book:
         created_at=now,
         updated_at=now,
     )
-    # Persist source text and the initial manifest. source.txt is the durable
-    # copy of the manuscript; manifest.json is the job record of truth.
     put_bytes(request.text.encode("utf-8"), books_service.source_key(book_id), "text/plain")
     books_service.save_manifest(book)
     return book
@@ -84,19 +78,15 @@ def validate_narration_job(args: tuple | list, kwargs: dict) -> None:
 
 
 def enqueue_narration_job(book_id: str) -> str:
-    """Queue a durable narration job for a persisted book manifest."""
     books_service.validate_book_id(book_id)
-    return enqueue_job(
-        NARRATION_JOB_TARGET,
-        (book_id,),
-        narration_job_id(book_id),
-    )
+    return enqueue_job(NARRATION_JOB_TARGET, (book_id,), narration_job_id(book_id))
 
 
-def enqueue_resume_candidates(limit: int | None = None) -> int:
-    """Requeue incomplete books found in B2 when a worker starts."""
+def enqueue_resume_candidates(batch_size: int | None = None) -> int:
     queued = 0
-    for book_id in books_service.list_book_ids(limit=limit):
+    checked = 0
+    for book_id in books_service.list_book_ids():
+        checked += 1
         try:
             book = books_service.load_manifest(book_id)
         except Exception as e:
@@ -106,18 +96,20 @@ def enqueue_resume_candidates(limit: int | None = None) -> int:
             continue
         enqueue_narration_job(book.id)
         queued += 1
+        if batch_size and checked % batch_size == 0:
+            logger.info("Resume scan checked %d manifests", checked)
+    logger.info("Resume scan checked %d manifests total", checked)
     return queued
 
 
 def cancel_narration_for_book(book_id: str) -> None:
-    """Stop future queued/running narration writes for a book being deleted."""
     books_service.validate_book_id(book_id)
     tombstone_book(book_id)
     cancel_job(narration_job_id(book_id))
 
 
 class BookDeletedDuringNarration(Exception):
-    """Raised when DELETE has tombstoned a book while narration was running."""
+    pass
 
 
 def _ensure_not_deleted(book_id: str) -> None:
@@ -151,10 +143,6 @@ def _repopulate_chapter_text(book: Book) -> None:
 
 
 def run_narration(book_id: str) -> None:
-    """Render every chapter, then assemble the master.
-
-    Re-runs skip chapters already marked complete.
-    """
     try:
         lease = acquire_book_lease(book_id)
     except JobLeaseError as e:
@@ -163,7 +151,7 @@ def run_narration(book_id: str) -> None:
             book_id,
             type(e).__name__,
         )
-        return
+        raise
 
     try:
         _run_narration_with_lease(book_id, lease)
@@ -228,6 +216,17 @@ def _run_narration_with_lease(book_id: str, lease) -> None:
         return
     except BookDeletedDuringNarration:
         logger.info("Narration stopped for deleted book %s", book_id)
+        return
+    except Exception as e:
+        error = f"Worker failure: {type(e).__name__}"
+        if _should_retry_current_job():
+            book.status = NarrationStatus.RENDERING
+            book.error = f"Retrying narration after {error}"
+            _touch(book, lease)
+            logger.warning("Narration will retry for book %s: %s", book_id, error)
+            raise
+        _mark_failed(book, error, lease)
+        logger.exception("Narration failed permanently for book %s", book_id)
         return
 
     _assemble(book, lease)

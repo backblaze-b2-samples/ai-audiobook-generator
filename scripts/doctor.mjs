@@ -227,6 +227,10 @@ function redisUrlFromEnv() {
   return env.REDIS_URL || DEFAULT_REDIS_URL;
 }
 
+export function redisUrlInvalidMessage() {
+  return "REDIS_URL is invalid";
+}
+
 function canConnect(port, host) {
   return new Promise((res) => {
     const socket = createConnection({ port, host });
@@ -253,7 +257,7 @@ async function checkRedis() {
     parsed = new URL(redisUrl);
   } catch {
     fail(
-      `REDIS_URL is invalid: ${redisUrl}`,
+      redisUrlInvalidMessage(),
       "Set REDIS_URL to a Redis connection string, e.g. `redis://localhost:6379/0`",
     );
     return;
@@ -335,4 +339,6 @@ async function main() {
   console.error("\nProceeding despite warnings.\n");
 }
 
-main();
+if (process.env.DOCTOR_SKIP_MAIN !== "1") {
+  main();
+}

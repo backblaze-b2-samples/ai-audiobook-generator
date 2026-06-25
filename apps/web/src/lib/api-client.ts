@@ -12,6 +12,8 @@ import type {
 } from "@ai-audiobook-generator/shared";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const BOOK_OWNER = process.env.NEXT_PUBLIC_BOOK_OWNER || "local-dev";
+const BOOK_TOKEN = process.env.NEXT_PUBLIC_BOOK_TOKEN || "dev-book-token";
 
 /** Typed API error with HTTP status code for caller-side branching. */
 export class ApiError extends Error {
@@ -39,8 +41,13 @@ export class ApiError extends Error {
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
+  const headers = new Headers(init?.headers);
+  if (path === "/books" || path.startsWith("/books/")) {
+    headers.set("X-Book-Owner", BOOK_OWNER);
+    headers.set("X-Book-Token", BOOK_TOKEN);
+  }
   try {
-    res = await fetch(`${API_BASE}${path}`, init);
+    res = await fetch(`${API_BASE}${path}`, { ...init, headers });
   } catch {
     // Network failure (offline, DNS, CORS, etc.)
     throw new ApiError("Network error — check your connection", 0);
