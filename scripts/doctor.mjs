@@ -48,13 +48,27 @@ const PLACEHOLDERS = new Set([
 ]);
 const BOOK_AUTH_TOKEN_PLACEHOLDER = "replace-with-a-random-token";
 
+function parseBookAuthEntry(value) {
+  const item = value.trim();
+  const sep = item.includes(":") ? ":" : item.includes("=") ? "=" : null;
+  if (!sep) return null;
+  const sepIndex = item.indexOf(sep);
+  const owner = item.slice(0, sepIndex).trim();
+  const token = item.slice(sepIndex + 1).trim();
+  return owner && token ? { owner, token } : null;
+}
+
 export function hasBookAuthPlaceholder(value) {
   return value.split(",").some((item) => {
-    const trimmed = item.trim();
-    const sep = trimmed.includes(":") ? ":" : trimmed.includes("=") ? "=" : null;
-    const token = sep ? trimmed.split(sep, 2)[1] : trimmed;
+    const parsed = parseBookAuthEntry(item);
+    const token = parsed ? parsed.token : item.trim();
     return token.trim() === BOOK_AUTH_TOKEN_PLACEHOLDER;
   });
+}
+
+export function bookAuthTokensAreValid(value) {
+  const entries = value.split(",").filter((item) => item.trim());
+  return entries.length > 0 && entries.every((item) => parseBookAuthEntry(item));
 }
 
 // Only Next.js: `pnpm dev` self-heals the API side via scripts/pick-port.mjs,
@@ -218,6 +232,12 @@ function checkEnv() {
     fail(
       `.env still has placeholder values: ${placeholders.join(", ")}`,
       "Edit .env and replace placeholders with your real configuration values (B2 keys: https://secure.backblaze.com/app_keys.htm?utm_source=github&utm_medium=referral&utm_campaign=ai_artifacts&utm_content=b2ai-audiobook-generator)",
+    );
+  }
+  if (env.BOOK_AUTH_TOKENS && !bookAuthTokensAreValid(env.BOOK_AUTH_TOKENS)) {
+    fail(
+      "BOOK_AUTH_TOKENS has invalid format",
+      "Set BOOK_AUTH_TOKENS as owner:strong-random-token or owner=strong-random-token",
     );
   }
 }

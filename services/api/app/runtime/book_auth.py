@@ -8,6 +8,7 @@ from typing import Annotated
 from fastapi import Header, HTTPException
 
 from app.config import settings
+from app.config.book_auth_tokens import parse_book_auth_tokens
 
 
 @dataclass(frozen=True)
@@ -17,20 +18,7 @@ class BookPrincipal:
 
 @lru_cache(maxsize=1)
 def _configured_tokens() -> dict[str, str]:
-    tokens: dict[str, str] = {}
-    for item in settings.book_auth_tokens.split(","):
-        if not item.strip():
-            continue
-        if ":" in item:
-            sep = ":"
-        elif "=" in item:
-            sep = "="
-        else:
-            continue
-        owner, token = item.split(sep, 1)
-        if owner.strip() and token.strip():
-            tokens[owner.strip()] = token.strip()
-    return tokens
+    return parse_book_auth_tokens(settings.book_auth_tokens)
 
 
 def require_book_principal(

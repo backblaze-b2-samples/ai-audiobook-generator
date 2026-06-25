@@ -36,3 +36,16 @@ async def test_startup_rejects_book_auth_placeholder(monkeypatch):
     with pytest.raises(RuntimeError, match="BOOK_AUTH_TOKENS"):
         async with lifespan(None):
             pass
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("book_auth_tokens", ["garbage", "owner:", ":token"])
+async def test_startup_rejects_malformed_book_auth_tokens(
+    monkeypatch, book_auth_tokens
+):
+    _set_required_b2(monkeypatch)
+    monkeypatch.setattr(settings, "book_auth_tokens", book_auth_tokens)
+
+    with pytest.raises(RuntimeError, match="Invalid BOOK_AUTH_TOKENS format"):
+        async with lifespan(None):
+            pass

@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from starlette.middleware.base import BaseHTTPMiddleware  # noqa: E402
 
 from app.config import settings  # noqa: E402
+from app.config.book_auth_tokens import book_auth_tokens_are_valid  # noqa: E402
 from app.config.logging import configure_logging  # noqa: E402
 from app.runtime import books, files, health, metrics, upload  # noqa: E402
 
@@ -86,6 +87,12 @@ async def lifespan(_app: "FastAPI"):
             "Configuration still has placeholder values: "
             + ", ".join(placeholders)
             + f". Edit {REPO_ROOT_ENV} with your real configuration values and restart."
+        )
+
+    if not book_auth_tokens_are_valid(settings.book_auth_tokens):
+        raise RuntimeError(
+            "Invalid BOOK_AUTH_TOKENS format. Set at least one owner:token "
+            + f"entry in {REPO_ROOT_ENV} and restart."
         )
     yield
 
