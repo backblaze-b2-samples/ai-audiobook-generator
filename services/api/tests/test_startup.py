@@ -30,7 +30,7 @@ async def test_startup_rejects_book_auth_placeholder(monkeypatch):
     monkeypatch.setattr(
         settings,
         "book_auth_tokens",
-        "local-dev:replace-with-a-random-token",
+        "prod:strong-token,local-dev:replace-with-a-random-token",
     )
 
     with pytest.raises(RuntimeError, match="BOOK_AUTH_TOKENS"):

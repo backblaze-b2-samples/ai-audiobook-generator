@@ -46,6 +46,16 @@ const PLACEHOLDERS = new Set([
   "your-bucket-name",
   "local-dev:replace-with-a-random-token",
 ]);
+const BOOK_AUTH_TOKEN_PLACEHOLDER = "replace-with-a-random-token";
+
+export function hasBookAuthPlaceholder(value) {
+  return value.split(",").some((item) => {
+    const trimmed = item.trim();
+    const sep = trimmed.includes(":") ? ":" : trimmed.includes("=") ? "=" : null;
+    const token = sep ? trimmed.split(sep, 2)[1] : trimmed;
+    return token.trim() === BOOK_AUTH_TOKEN_PLACEHOLDER;
+  });
+}
 
 // Only Next.js: `pnpm dev` self-heals the API side via scripts/pick-port.mjs,
 // so warning about 8000 here would just duplicate dev.sh's own banner.
@@ -202,7 +212,7 @@ function checkEnv() {
     );
   }
   const placeholders = REQUIRED_ENV_VARS.filter(
-    (k) => env[k] && PLACEHOLDERS.has(env[k]),
+    (k) => env[k] && (PLACEHOLDERS.has(env[k]) || (k === "BOOK_AUTH_TOKENS" && hasBookAuthPlaceholder(env[k]))),
   );
   if (placeholders.length > 0) {
     fail(

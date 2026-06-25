@@ -85,10 +85,12 @@ def enqueue_narration_job(book_id: str) -> str:
 
 
 def enqueue_resume_candidates(batch_size: int | None = None, max_manifests: int | None = None) -> int:
+    if max_manifests is not None and max_manifests <= 0:
+        return 0
     queued = 0
     checked = 0
-    cursor = get_resume_scan_cursor() if max_manifests else None
-    kwargs = {"limit": max_manifests, "start_after_id": cursor} if max_manifests else {}
+    cursor = get_resume_scan_cursor() if max_manifests is not None else None
+    kwargs = {"limit": max_manifests, "start_after_id": cursor} if max_manifests is not None else {}
     ids = books_service.list_book_ids(**kwargs)
     last_book_id = None
     for book_id in ids:
@@ -105,7 +107,7 @@ def enqueue_resume_candidates(batch_size: int | None = None, max_manifests: int 
         queued += 1
         if batch_size and checked % batch_size == 0:
             logger.info("Resume scan checked %d manifests", checked)
-    if max_manifests:
+    if max_manifests is not None:
         set_resume_scan_cursor(last_book_id if checked >= max_manifests else None)
     logger.info("Resume scan checked %d manifests total", checked)
     return queued

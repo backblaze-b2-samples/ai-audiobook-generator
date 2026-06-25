@@ -28,3 +28,28 @@ def test_doctor_invalid_redis_url_message_redacts_credentials():
     assert "secret" not in result.stdout
     assert "user" not in result.stdout
     assert result.stdout.strip() == "REDIS_URL is invalid"
+
+
+def test_doctor_detects_placeholder_book_auth_entry():
+    repo_root = Path(__file__).resolve().parents[3]
+    env = {**os.environ, "DOCTOR_SKIP_MAIN": "1"}
+    result = subprocess.run(
+        [
+            "node",
+            "--input-type=module",
+            "-e",
+            (
+                "import { hasBookAuthPlaceholder } from './scripts/doctor.mjs';"
+                "process.stdout.write(String(hasBookAuthPlaceholder("
+                "'prod:strong,local-dev:replace-with-a-random-token'"
+                ")));"
+            ),
+        ],
+        cwd=repo_root,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    assert result.stdout.strip() == "true"

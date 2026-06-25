@@ -500,6 +500,18 @@ def test_enqueue_resume_candidates_clears_cursor_at_end(monkeypatch):
     assert cursor_updates == [None]
 
 
+def test_enqueue_resume_candidates_zero_limit_does_not_scan(monkeypatch):
+    from app.service import books as books_service
+
+    monkeypatch.setattr(
+        books_service,
+        "list_book_ids",
+        lambda limit=None, start_after_id=None: pytest.fail("should not scan"),
+    )
+
+    assert narration_service.enqueue_resume_candidates(max_manifests=0) == 0
+
+
 def test_list_voices_uses_provider(monkeypatch):
     monkeypatch.setattr(narration_service, "get_provider", lambda: FakeProvider())
     voices = narration_service.list_voices()

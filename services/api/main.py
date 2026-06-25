@@ -45,6 +45,20 @@ PLACEHOLDER_VALUES = frozenset({
     "your-bucket-name",
     "local-dev:replace-with-a-random-token",
 })
+BOOK_AUTH_TOKEN_PLACEHOLDER = "replace-with-a-random-token"
+
+
+def _has_book_auth_placeholder(value: str) -> bool:
+    for item in value.split(","):
+        if ":" in item:
+            token = item.split(":", 1)[1]
+        elif "=" in item:
+            token = item.split("=", 1)[1]
+        else:
+            token = item
+        if token.strip() == BOOK_AUTH_TOKEN_PLACEHOLDER:
+            return True
+    return False
 
 
 @asynccontextmanager
@@ -65,6 +79,7 @@ async def lifespan(_app: "FastAPI"):
         env_name
         for attr, env_name in REQUIRED_B2_SETTINGS + REQUIRED_AUTH_SETTINGS
         if getattr(settings, attr) in PLACEHOLDER_VALUES
+        or (attr == "book_auth_tokens" and _has_book_auth_placeholder(getattr(settings, attr)))
     ]
     if placeholders:
         raise RuntimeError(
