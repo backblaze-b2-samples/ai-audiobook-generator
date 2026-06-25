@@ -247,6 +247,7 @@ def _should_retry_current_job() -> bool:
 
 def _mark_failed(book: Book, error: str, lease) -> None:
     current = next((c for c in book.chapters if c.status == NarrationStatus.RENDERING), None)
+    current = current or next((c for c in book.chapters if c.status != NarrationStatus.COMPLETE), None)
     if current:
         current.status = NarrationStatus.FAILED
         current.error = error

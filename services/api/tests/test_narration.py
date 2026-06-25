@@ -188,6 +188,8 @@ def test_run_narration_fails_when_source_missing(monkeypatch):
     final = narration_service.get_book_detail(book.id)
     assert final.status == NarrationStatus.FAILED
     assert "source" in (final.error or "").lower()
+    assert final.chapters[0].status == NarrationStatus.FAILED
+    assert "source" in (final.chapters[0].error or "").lower()
 
 
 def test_run_narration_marks_failed_on_tts_error(monkeypatch):
