@@ -119,6 +119,38 @@ def test_enqueue_job_uses_rq_2_compatible_options(monkeypatch):
     assert "unique" not in queue.enqueue_kwargs
 
 
+def test_connection_configures_retry_on_redis_client(monkeypatch):
+    calls = {}
+    pool = object()
+
+    def fake_from_url(url, **kwargs):
+        calls["pool_url"] = url
+        calls["pool_kwargs"] = kwargs
+        return pool
+
+    class FakeRedis:
+        def __init__(self, **kwargs):
+            calls["redis_kwargs"] = kwargs
+
+    monkeypatch.setattr(
+        job_queue_repo.ConnectionPool,
+        "from_url",
+        staticmethod(fake_from_url),
+    )
+    monkeypatch.setattr(job_queue_repo, "Redis", FakeRedis)
+
+    job_queue_repo._connection()
+
+    assert calls["pool_url"] == job_queue_repo.settings.redis_url
+    assert "retry" not in calls["pool_kwargs"]
+    assert calls["pool_kwargs"] == {
+        "socket_connect_timeout": job_queue_repo.settings.redis_socket_connect_timeout_seconds,
+        "socket_timeout": job_queue_repo.settings.redis_socket_timeout_seconds,
+    }
+    assert calls["redis_kwargs"]["connection_pool"] is pool
+    assert isinstance(calls["redis_kwargs"]["retry"], job_queue_repo.RedisRetry)
+
+
 def test_enqueue_job_reuses_valid_queued_job(monkeypatch):
     class ExistingJob:
         id = "narration:book-id"

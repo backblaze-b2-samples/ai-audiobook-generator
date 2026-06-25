@@ -3,7 +3,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from redis import Redis
+from redis import ConnectionPool, Redis
 from redis.backoff import ExponentialBackoff
 from redis.exceptions import ConnectionError, RedisError, TimeoutError
 from redis.lock import Lock
@@ -72,12 +72,12 @@ def _connection() -> Redis:
         settings.redis_retry_count,
         supported_errors=(ConnectionError, TimeoutError),
     )
-    return Redis.from_url(
+    pool = ConnectionPool.from_url(
         settings.redis_url,
         socket_connect_timeout=settings.redis_socket_connect_timeout_seconds,
         socket_timeout=settings.redis_socket_timeout_seconds,
-        retry=retry,
     )
+    return Redis(connection_pool=pool, retry=retry)
 
 
 def _queue(connection: Redis | None = None) -> Queue:
