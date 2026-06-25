@@ -129,7 +129,9 @@ async def test_delete_book_cancels_narration_before_deleting(client, monkeypatch
     monkeypatch.setattr(
         books_runtime,
         "get_book",
-        lambda book_id, owner_id=None: type("Book", (), {"status": "rendering"})(),
+        lambda book_id, owner_id=None: type(
+            "Book", (), {"status": NarrationStatus.RENDERING}
+        )(),
     )
     monkeypatch.setattr(
         books_runtime,
@@ -156,7 +158,9 @@ async def test_delete_book_queue_error_logs_safely(client, monkeypatch, caplog):
     monkeypatch.setattr(
         books_runtime,
         "get_book",
-        lambda book_id, owner_id=None: type("Book", (), {"status": "rendering"})(),
+        lambda book_id, owner_id=None: type(
+            "Book", (), {"status": NarrationStatus.RENDERING}
+        )(),
     )
     monkeypatch.setattr(
         books_runtime,
@@ -185,7 +189,9 @@ async def test_delete_completed_book_skips_queue_cancel(client, monkeypatch):
     monkeypatch.setattr(
         books_runtime,
         "get_book",
-        lambda book_id, owner_id=None: type("Book", (), {"status": "complete"})(),
+        lambda book_id, owner_id=None: type(
+            "Book", (), {"status": NarrationStatus.COMPLETE}
+        )(),
     )
     monkeypatch.setattr(
         books_runtime,

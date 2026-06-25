@@ -29,6 +29,7 @@ from app.types import (
     BookSummary,
     CreateBookRequest,
     DailyNarrationHours,
+    NarrationStatus,
     Voice,
 )
 
@@ -115,7 +116,7 @@ async def delete_book_endpoint(
 ):
     try:
         book = await run_in_threadpool(get_book, book_id, principal.owner_id)
-        if book.status not in {"complete", "failed"}:
+        if book.status not in {NarrationStatus.COMPLETE, NarrationStatus.FAILED}:
             await run_in_threadpool(cancel_narration_for_book, book_id)
         deleted = await run_in_threadpool(delete_book, book_id, principal.owner_id)
     except BookKeyError as e:
