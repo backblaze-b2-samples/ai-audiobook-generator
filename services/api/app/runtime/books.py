@@ -82,7 +82,7 @@ async def create_book_endpoint(
     except JobQueueError as e:
         if book:
             try:
-                await run_in_threadpool(delete_book, book.id)
+                await run_in_threadpool(delete_book, book.id, principal.owner_id)
             except Exception:
                 logger.exception("Failed to clean up audiobook after enqueue failure")
         logger.error(

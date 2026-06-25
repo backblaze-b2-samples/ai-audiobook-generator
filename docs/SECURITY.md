@@ -59,6 +59,8 @@ Security principles and implementation for the AI Audiobook Generator.
 
 - All secrets (B2 keys, TTS provider keys, Redis credentials) loaded via environment
   variables (pydantic-settings)
+- `BOOK_AUTH_TOKENS` has no runtime default and must be configured explicitly; the
+  sample placeholder token is rejected during API startup.
 - Never committed to source control
 - `.env.example` documents required variables with placeholder values only
 

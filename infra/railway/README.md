@@ -45,7 +45,7 @@ Set these on the API service:
 | `ELEVENLABS_API_KEY` | ElevenLabs key (only if `TTS_PROVIDER=elevenlabs`; also `pip install elevenlabs`) |
 | `TTS_DEFAULT_VOICE` | Optional default narrator voice id |
 | `REDIS_URL` | Railway Redis connection string |
-| `BOOK_AUTH_TOKENS` | Owner token map, e.g. `prod:generated-strong-token` |
+| `BOOK_AUTH_TOKENS` | Owner token map, e.g. `prod:generated-strong-random-token` |
 | `API_CORS_ORIGINS` | Your web service URL (e.g., `https://web-production-xxx.up.railway.app`) |
 
 Set the same B2, TTS, `REDIS_URL`, and `BOOK_AUTH_TOKENS` configuration on the

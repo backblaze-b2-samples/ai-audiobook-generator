@@ -32,6 +32,7 @@ REQUIRED_B2_SETTINGS = (
     ("b2_endpoint", "B2_ENDPOINT"),
     ("b2_region", "B2_REGION"),
 )
+REQUIRED_AUTH_SETTINGS = (("book_auth_tokens", "BOOK_AUTH_TOKENS"),)
 
 # Exact placeholder strings shipped in .env.example. If a user copied
 # the example and didn't edit it, Settings will pass the "non-empty"
@@ -42,6 +43,7 @@ PLACEHOLDER_VALUES = frozenset({
     "your_application_key_id",
     "your_application_key",
     "your-bucket-name",
+    "local-dev:replace-with-a-random-token",
 })
 
 
@@ -49,24 +51,24 @@ PLACEHOLDER_VALUES = frozenset({
 async def lifespan(_app: "FastAPI"):
     missing = [
         env_name
-        for attr, env_name in REQUIRED_B2_SETTINGS
+        for attr, env_name in REQUIRED_B2_SETTINGS + REQUIRED_AUTH_SETTINGS
         if not getattr(settings, attr)
     ]
     if missing:
         raise RuntimeError(
-            "Missing required B2 configuration: "
+            "Missing required configuration: "
             + ", ".join(missing)
             + f". Add them to {REPO_ROOT_ENV} (see .env.example) and restart."
         )
 
     placeholders = [
         env_name
-        for attr, env_name in REQUIRED_B2_SETTINGS
+        for attr, env_name in REQUIRED_B2_SETTINGS + REQUIRED_AUTH_SETTINGS
         if getattr(settings, attr) in PLACEHOLDER_VALUES
     ]
     if placeholders:
         raise RuntimeError(
-            "B2 configuration still has placeholder values: "
+            "Configuration still has placeholder values: "
             + ", ".join(placeholders)
             + f". Edit {REPO_ROOT_ENV} with your real B2 credentials and restart."
         )
@@ -95,7 +97,7 @@ app.add_middleware(
     allow_origin_regex=settings.api_cors_origin_regex or None,
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_headers=["Content-Type", "Authorization", "X-Book-Owner", "X-Book-Token"],
 )
 
 # Request ID + timing middleware

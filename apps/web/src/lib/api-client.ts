@@ -12,8 +12,8 @@ import type {
 } from "@ai-audiobook-generator/shared";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-const BOOK_OWNER = process.env.NEXT_PUBLIC_BOOK_OWNER || "local-dev";
-const BOOK_TOKEN = process.env.NEXT_PUBLIC_BOOK_TOKEN || "dev-book-token";
+const BOOK_OWNER = process.env.NEXT_PUBLIC_BOOK_OWNER || "";
+const BOOK_TOKEN = process.env.NEXT_PUBLIC_BOOK_TOKEN || "";
 
 /** Typed API error with HTTP status code for caller-side branching. */
 export class ApiError extends Error {

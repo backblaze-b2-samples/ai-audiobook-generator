@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     # Minimal tenant auth for audiobook routes. Format:
     # "owner-a:token-a,owner-b:token-b". The frontend sends the matching
     # NEXT_PUBLIC_BOOK_OWNER and NEXT_PUBLIC_BOOK_TOKEN values.
-    book_auth_tokens: str = "local-dev:dev-book-token"
+    book_auth_tokens: str = ""
 
     api_port: int = 8000
     # Explicit allowlist by default — covers Next on :3000 and the

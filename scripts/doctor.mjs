@@ -25,8 +25,8 @@ const REQUIRED_NODE_MAJOR = 20;
 const REQUIRED_PNPM_MAJOR = 9;
 const REQUIRED_PYTHON_MINOR = 11; // 3.11+
 
-// Required B2 env vars + the exact placeholder strings shipped in
-// .env.example. Keep in sync with services/api/main.py REQUIRED_B2_SETTINGS
+// Required boot env vars + the exact placeholder strings shipped in
+// .env.example. Keep in sync with services/api/main.py REQUIRED_*_SETTINGS
 // and PLACEHOLDER_VALUES. (TTS_PROVIDER / OPENAI_API_KEY are validated at
 // narration time, not here, so a key isn't required just to boot the app.)
 const REQUIRED_B2_VARS = [
@@ -36,12 +36,15 @@ const REQUIRED_B2_VARS = [
   "B2_APPLICATION_KEY",
   "B2_BUCKET_NAME",
 ];
+const REQUIRED_AUTH_VARS = ["BOOK_AUTH_TOKENS"];
+const REQUIRED_ENV_VARS = [...REQUIRED_B2_VARS, ...REQUIRED_AUTH_VARS];
 const PLACEHOLDERS = new Set([
   "your_b2_endpoint",
   "your_b2_region",
   "your_application_key_id",
   "your_application_key",
   "your-bucket-name",
+  "local-dev:replace-with-a-random-token",
 ]);
 
 // Only Next.js: `pnpm dev` self-heals the API side via scripts/pick-port.mjs,
@@ -191,14 +194,14 @@ function checkEnv() {
     return;
   }
   const env = parseEnvFile(ENV_FILE);
-  const missing = REQUIRED_B2_VARS.filter((k) => !env[k]);
+  const missing = REQUIRED_ENV_VARS.filter((k) => !env[k]);
   if (missing.length > 0) {
     fail(
-      `.env is missing required B2 variables: ${missing.join(", ")}`,
+      `.env is missing required variables: ${missing.join(", ")}`,
       "See .env.example for the full list and edit .env to add them",
     );
   }
-  const placeholders = REQUIRED_B2_VARS.filter(
+  const placeholders = REQUIRED_ENV_VARS.filter(
     (k) => env[k] && PLACEHOLDERS.has(env[k]),
   );
   if (placeholders.length > 0) {
