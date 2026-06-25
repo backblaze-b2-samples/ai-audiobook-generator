@@ -180,8 +180,8 @@ pnpm dev
 Frontend at `localhost:3000`, API at `localhost:8000`, worker in the same terminal.
 `pnpm dev` first runs
 `pnpm doctor`, a preflight that checks Node/Python/pnpm versions, ffmpeg, the
-venv, Redis, and your `.env` (missing or placeholder B2 vars), telling you exactly how
-to fix each issue. Run it any time with `pnpm doctor`.
+venv, Redis, and your `.env` (missing or placeholder required vars), telling you
+exactly how to fix each issue. Run it any time with `pnpm doctor`.
 
 ## Core Features
 

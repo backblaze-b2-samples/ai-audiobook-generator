@@ -85,7 +85,7 @@ async def lifespan(_app: "FastAPI"):
         raise RuntimeError(
             "Configuration still has placeholder values: "
             + ", ".join(placeholders)
-            + f". Edit {REPO_ROOT_ENV} with your real B2 credentials and restart."
+            + f". Edit {REPO_ROOT_ENV} with your real configuration values and restart."
         )
     yield
 
