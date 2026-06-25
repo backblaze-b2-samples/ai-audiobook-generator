@@ -32,7 +32,7 @@ def _resume_existing_books() -> None:
     try:
         lease = acquire_resume_scan_lease()
     except JobLeaseError as e:
-        logger.info("Skipping resume scan: %s", e)
+        logger.info("Skipping resume scan: error_type=%s", type(e).__name__)
         return
 
     try:
@@ -49,7 +49,7 @@ def main() -> None:
     try:
         run_worker(ALLOWED_TARGETS)
     except JobQueueError as e:
-        logger.error("Narration worker failed: %s", e)
+        logger.error("Narration worker failed: error_type=%s", type(e).__name__)
         raise SystemExit(1) from None
 
 

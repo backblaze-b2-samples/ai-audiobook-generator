@@ -80,7 +80,10 @@ def narration_job_id(book_id: str) -> str:
 def validate_narration_job(args: tuple | list, kwargs: dict) -> None:
     if kwargs or len(args) != 1:
         raise ValueError("Narration jobs must pass exactly one book id argument.")
-    books_service.validate_book_id(args[0])
+    book_id = args[0]
+    if not isinstance(book_id, str):
+        raise ValueError("Narration job book id must be a string.")
+    books_service.validate_book_id(book_id)
 
 
 def enqueue_narration_job(book_id: str) -> str:

@@ -51,3 +51,8 @@ def test_narration_queue_target_resolves_to_runner():
 def test_narration_job_rejects_non_uuid_argument():
     with pytest.raises(BookKeyError):
         narration_service.validate_narration_job(("not-a-uuid",), {})
+
+
+def test_narration_job_rejects_non_string_argument():
+    with pytest.raises(ValueError, match="book id must be a string"):
+        narration_service.validate_narration_job(({"id": "not-a-string"},), {})
