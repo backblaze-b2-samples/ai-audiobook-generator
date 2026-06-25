@@ -93,3 +93,26 @@ def test_enqueue_job_redis_error_is_sanitized(monkeypatch):
     assert "private-host" not in str(exc_info.value)
     assert "RedisError" in str(exc_info.value)
     assert isinstance(exc_info.value.__cause__, RedisError)
+
+
+def test_enqueue_job_uses_rq_2_compatible_options(monkeypatch):
+    class FakeJob:
+        id = "job"
+
+    class FakeQueue:
+        enqueue_kwargs = None
+
+        def fetch_job(self, job_id):
+            return None
+
+        def enqueue_call(self, **kwargs):
+            self.enqueue_kwargs = kwargs
+            return FakeJob()
+
+    queue = FakeQueue()
+    monkeypatch.setattr(job_queue_repo, "_connection", lambda: object())
+    monkeypatch.setattr(job_queue_repo, "_queue", lambda connection: queue)
+
+    assert job_queue_repo.enqueue_job("app.service.narration.run_narration", (), "job") == "job"
+    assert queue.enqueue_kwargs is not None
+    assert "unique" not in queue.enqueue_kwargs

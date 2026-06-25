@@ -106,7 +106,6 @@ def enqueue_job(target: str, args: tuple, job_id: str) -> str:
             result_ttl=settings.narration_job_result_ttl_seconds,
             failure_ttl=settings.narration_job_failure_ttl_seconds,
             retry=Retry(max=3, interval=[30, 300, 900]),
-            unique=True,
         )
     except DuplicateJobError:
         return job_id
