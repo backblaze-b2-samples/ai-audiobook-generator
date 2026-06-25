@@ -66,8 +66,9 @@ uploads/<file>                           generic Upload page (kept, unchanged)
    finished chapter from a presigned, non-attachment B2 URL.
 
 All B2 access is **S3-compatible — there is no b2-native API anywhere**. A single
-boto3 S3 client (signature v4, custom user agent `b2ai-audiobook-generator`) lives
-in `services/api/app/repo/`.
+boto3 S3 client (signature v4, custom user agent
+`b2ai-ai-audiobook-generator (backblaze-b2-samples)`) lives in
+`services/api/app/repo/`.
 
 ## Agent-First Architecture
 
@@ -151,8 +152,9 @@ cp .env.example .env
 Open `.env` and fill in:
 
 - From the [Backblaze B2 dashboard](https://secure.backblaze.com/b2_buckets.htm?utm_source=github&utm_medium=referral&utm_campaign=ai_artifacts&utm_content=b2ai-audiobook-generator):
-  - **Create a bucket** → `B2_BUCKET_NAME`, **Endpoint** → `B2_ENDPOINT`, and the
-    region segment of that endpoint (e.g. `us-west-004`) → `B2_REGION`.
+  - **Create a bucket** → `B2_BUCKET_NAME`, and set `B2_REGION` to the bucket
+    region (e.g. `us-west-004`). The app derives the B2 S3 endpoint as
+    `https://s3.<B2_REGION>.backblazeb2.com`.
   - **Create an application key** with `Read and Write` permission → **keyID** →
     `B2_APPLICATION_KEY_ID`, **applicationKey** → `B2_APPLICATION_KEY` *(shown once)*.
 - Your TTS key: `OPENAI_API_KEY` for the default OpenAI provider. To use ElevenLabs

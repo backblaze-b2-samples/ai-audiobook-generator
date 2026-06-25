@@ -35,8 +35,7 @@ Set these on the API service:
 
 | Variable | Value |
 |----------|-------|
-| `B2_ENDPOINT` | Your B2 S3 endpoint |
-| `B2_REGION` | Your B2 region (e.g. `us-west-004`) |
+| `B2_REGION` | Your B2 region (e.g. `us-west-004`); the S3 endpoint is derived from this |
 | `B2_APPLICATION_KEY_ID` | Your B2 application key ID |
 | `B2_APPLICATION_KEY` | Your B2 application key |
 | `B2_BUCKET_NAME` | Your bucket name |

@@ -10,7 +10,6 @@ def _set_required_b2(monkeypatch):
     monkeypatch.setattr(settings, "b2_application_key_id", "key-id")
     monkeypatch.setattr(settings, "b2_application_key", "key")
     monkeypatch.setattr(settings, "b2_bucket_name", "bucket")
-    monkeypatch.setattr(settings, "b2_endpoint", "https://s3.example.com")
     monkeypatch.setattr(settings, "b2_region", "us-west-004")
 
 

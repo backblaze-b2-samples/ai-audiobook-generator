@@ -30,7 +30,6 @@ const REQUIRED_PYTHON_MINOR = 11; // 3.11+
 // and PLACEHOLDER_VALUES. (TTS_PROVIDER / OPENAI_API_KEY are validated at
 // narration time, not here, so a key isn't required just to boot the app.)
 const REQUIRED_B2_VARS = [
-  "B2_ENDPOINT",
   "B2_REGION",
   "B2_APPLICATION_KEY_ID",
   "B2_APPLICATION_KEY",
@@ -39,7 +38,6 @@ const REQUIRED_B2_VARS = [
 const REQUIRED_AUTH_VARS = ["BOOK_AUTH_TOKENS"];
 const REQUIRED_ENV_VARS = [...REQUIRED_B2_VARS, ...REQUIRED_AUTH_VARS];
 const PLACEHOLDERS = new Set([
-  "your_b2_endpoint",
   "your_b2_region",
   "your_application_key_id",
   "your_application_key",
