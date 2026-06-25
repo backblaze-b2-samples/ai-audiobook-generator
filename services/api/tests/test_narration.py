@@ -245,7 +245,7 @@ def test_run_narration_retries_transient_tts_error(monkeypatch):
     assert attempts == 2
 
 
-def test_run_narration_exits_when_book_lease_unavailable(monkeypatch):
+def test_run_narration_exits_when_book_lease_unavailable(monkeypatch, caplog):
     objects, _ = _install_fakes(monkeypatch)
     req = CreateBookRequest(title="Lease", text="Chapter 1\nA.")
     book = narration_service.create_book(req)
@@ -255,14 +255,19 @@ def test_run_narration_exits_when_book_lease_unavailable(monkeypatch):
     monkeypatch.setattr(
         narration_service,
         "acquire_book_lease",
-        lambda book_id: (_ for _ in ()).throw(JobLeaseError("busy")),
+        lambda book_id: (_ for _ in ()).throw(
+            JobLeaseError("redis://private-host:6379 timed out")
+        ),
     )
 
-    narration_service.run_narration(book.id)
+    with caplog.at_level("INFO", logger=narration_service.logger.name):
+        narration_service.run_narration(book.id)
 
     final = narration_service.get_book_detail(book.id)
     assert final.status == NarrationStatus.PENDING
     assert sum(1 for key in objects if key.endswith(".mp3")) == 0
+    assert "private-host" not in caplog.text
+    assert "JobLeaseError" in caplog.text
 
 
 def test_enqueue_resume_candidates_queues_only_incomplete_books(monkeypatch):

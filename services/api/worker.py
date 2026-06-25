@@ -38,6 +38,8 @@ def _resume_existing_books() -> None:
     try:
         queued = enqueue_resume_candidates(limit=settings.narration_resume_scan_limit)
         logger.info("Queued %d incomplete narration jobs", queued)
+    except (JobLeaseError, JobQueueError) as e:
+        logger.error("Resume scan failed: error_type=%s", type(e).__name__)
     except Exception:
         logger.exception("Resume scan failed")
     finally:

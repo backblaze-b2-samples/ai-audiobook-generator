@@ -167,7 +167,11 @@ def run_narration(book_id: str) -> None:
     try:
         lease = acquire_book_lease(book_id)
     except JobLeaseError as e:
-        logger.info("Narration lease unavailable for book %s: %s", book_id, e)
+        logger.info(
+            "Narration lease unavailable for book %s: error_type=%s",
+            book_id,
+            type(e).__name__,
+        )
         return
 
     try:
