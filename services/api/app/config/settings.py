@@ -21,10 +21,19 @@ class Settings(BaseSettings):
     # Durable narration jobs. API requests enqueue work into Redis, and a
     # separate RQ worker process renders chapters from the B2 manifest.
     redis_url: str = "redis://localhost:6379/0"
+    redis_socket_connect_timeout_seconds: float = 1.0
+    redis_socket_timeout_seconds: float = 2.0
+    redis_retry_count: int = 2
+    redis_retry_backoff_base_seconds: float = 0.05
+    redis_retry_backoff_cap_seconds: float = 0.2
     narration_queue_name: str = "narration"
     narration_job_timeout_seconds: int = 60 * 60
     narration_job_result_ttl_seconds: int = 24 * 60 * 60
     narration_job_failure_ttl_seconds: int = 7 * 24 * 60 * 60
+    narration_lease_ttl_seconds: int = 10 * 60
+    narration_tombstone_ttl_seconds: int = 24 * 60 * 60
+    narration_resume_scan_limit: int = 100
+    narration_resume_scan_lease_ttl_seconds: int = 15 * 60
 
     api_port: int = 8000
     # Explicit allowlist by default — covers Next on :3000 and the

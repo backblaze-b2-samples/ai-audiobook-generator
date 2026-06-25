@@ -11,6 +11,9 @@ Engineering workflows for this repo.
 - **ffmpeg** on PATH (M4B master assembly). Per-chapter MP3s render without it;
   `pnpm doctor` warns when it's missing.
 - A TTS provider key in `.env` (OpenAI by default: `OPENAI_API_KEY`).
+- Install backend dependencies from `services/api/requirements.lock` with
+  `pip install --require-hashes -r requirements.lock`; update the lock with
+  `pip-compile --generate-hashes` after dependency changes.
 
 ## New Feature
 

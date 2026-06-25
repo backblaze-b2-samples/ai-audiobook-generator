@@ -55,6 +55,12 @@ Security principles and implementation for the AI Audiobook Generator.
 - Never committed to source control
 - `.env.example` documents required variables with placeholder values only
 
+## Dependency Integrity
+
+- Production installs use `services/api/requirements.lock` with `--require-hashes`.
+- Redis/RQ queue dependencies are pinned and hash-locked to avoid unreviewed resolver
+  upgrades in API and worker deploys.
+
 ## Agent Security Rules
 
 - Never commit `.env`, credentials, or API keys

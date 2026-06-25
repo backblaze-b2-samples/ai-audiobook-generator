@@ -138,7 +138,7 @@ sudo systemctl start redis-server
 ```bash
 cd services/api
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install --require-hashes -r requirements.lock
 cd ../..
 ```
 

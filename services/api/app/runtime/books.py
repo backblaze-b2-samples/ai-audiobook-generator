@@ -1,6 +1,7 @@
 import logging
 
 from fastapi import APIRouter, HTTPException
+from starlette.concurrency import run_in_threadpool
 
 from app.repo import JobQueueError, TTSError
 from app.service.books import (
@@ -14,7 +15,12 @@ from app.service.books import (
     list_books,
     master_download_url,
 )
-from app.service.narration import create_book, enqueue_narration_job, list_voices
+from app.service.narration import (
+    cancel_narration_for_book,
+    create_book,
+    enqueue_narration_job,
+    list_voices,
+)
 from app.types import (
     BookDetail,
     BookStats,
@@ -56,16 +62,22 @@ async def book_activity_endpoint(days: int = 7):
 
 @router.post("/books", response_model=BookDetail, status_code=202)
 async def create_book_endpoint(request: CreateBookRequest):
+    book = None
     try:
-        book = create_book(request)
-        enqueue_narration_job(book.id)
+        book = await run_in_threadpool(create_book, request)
+        await run_in_threadpool(enqueue_narration_job, book.id)
     except TTSError as e:
         raise HTTPException(status_code=502, detail=str(e)) from None
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from None
     except JobQueueError as e:
-        detail = f"Narration queue unavailable: {e}"
-        raise HTTPException(status_code=503, detail=detail) from None
+        if book:
+            try:
+                await run_in_threadpool(delete_book, book.id)
+            except Exception:
+                logger.exception("Failed to clean up audiobook after enqueue failure")
+        logger.error("Narration queue unavailable for book %s: %s", getattr(book, "id", None), e)
+        raise HTTPException(status_code=503, detail="Narration queue unavailable") from None
     # Render in the durable worker; the client polls GET /books/{id} for progress.
     logger.info("Audiobook created: id=%s chapters=%d", book.id, book.chapter_count)
     return get_book(book.id)
@@ -84,11 +96,16 @@ async def get_book_endpoint(book_id: str):
 @router.delete("/books/{book_id}")
 async def delete_book_endpoint(book_id: str):
     try:
-        deleted = delete_book(book_id)
+        get_book(book_id)
+        await run_in_threadpool(cancel_narration_for_book, book_id)
+        deleted = await run_in_threadpool(delete_book, book_id)
     except BookKeyError as e:
         raise HTTPException(status_code=400, detail=e.detail) from None
     except BookNotFoundError as e:
         raise HTTPException(status_code=404, detail=e.detail) from None
+    except JobQueueError as e:
+        logger.error("Narration cancellation failed for book %s: %s", book_id, e)
+        raise HTTPException(status_code=503, detail="Narration queue unavailable") from None
     logger.info("Audiobook deleted: id=%s objects=%d", book_id, deleted)
     return {"deleted": True, "id": book_id, "objects_removed": deleted}
 

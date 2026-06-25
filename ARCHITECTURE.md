@@ -67,7 +67,8 @@ Every external dependency is wrapped in a `repo/` adapter, mirroring the boto3 r
   the active provider's package needs installing. Selected by `TTS_PROVIDER`.
 - **ffmpeg** — `repo/audio_master.py`, invoked via `subprocess` to build the M4B master.
 - **Redis/RQ** — `repo/job_queue.py`, used only for durable narration job enqueueing
-  and worker execution.
+  and worker execution. Jobs use RQ's JSON serializer and a restricted worker that
+  accepts only the stable narration target with a UUID book id.
 
 ### Directory Structure
 
@@ -89,7 +90,8 @@ services/api/
    (`service.chapters`), pick the narrator voice, write `source.txt` + an initial
    `manifest.json` (status `pending`), enqueue `run_narration(book.id)` in Redis/RQ,
    return `202`.
-2. An RQ worker runs `run_narration`: status → `rendering`; for each incomplete
+2. An RQ worker validates the job target and UUID argument, acquires a per-book
+   Redis lease, then runs `run_narration`: status → `rendering`; for each incomplete
    chapter, mark it `rendering`, `tts.synthesize` → `books_store.put_bytes`
    (chapter MP3) → extract duration (mutagen) → mark the chapter `complete` and
    rewrite the manifest. Reruns skip chapters already marked `complete`.
@@ -97,8 +99,8 @@ services/api/
    concat + chapter markers) → write `master.m4b` → status `complete`.
 4. If ffmpeg is unavailable, chapters remain playable and the book is marked
    `complete` with a note that master assembly was skipped.
-5. Worker startup scans manifests for `pending`, `rendering`, and `assembling`
-   books and re-enqueues them, so a restart resumes from the manifest.
+5. Worker startup starts queue consumption immediately and runs a bounded, lease-held
+   resume scan for `pending`, `rendering`, and `assembling` books.
 
 The frontend polls `GET /books/{id}` (and `GET /books`) via TanStack Query while a
 job is in flight, and plays finished chapters from presigned, non-attachment B2 URLs

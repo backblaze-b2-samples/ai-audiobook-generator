@@ -10,10 +10,16 @@ Reliability expectations and practices for this project.
 - The API process no longer owns in-flight work. If the API restarts, queued jobs
   remain in Redis and the worker keeps using the manifest in B2 as the source of truth.
 - Worker startup scans manifests for books in `pending`, `rendering`, and
-  `assembling`, then re-enqueues them. This covers deploys or worker restarts where
-  Redis no longer has an active job but B2 still shows incomplete work.
+  `assembling` under a Redis scan lease, then re-enqueues them. The scan is bounded
+  and isolated in a background thread so queue consumption can start immediately.
 - `run_narration` skips chapters already marked `complete` with an `audio_key`; pending,
   rendering, or failed chapters are retried from the durable source manuscript.
+- Workers acquire a per-book Redis lease before rendering and refresh it after each
+  manifest/object write. Duplicate jobs exit when the lease is busy.
+- TTS failures raise back to RQ while retries remain; only the final exhausted attempt
+  marks the book `failed`.
+- DELETE writes a short-lived Redis tombstone and cancels any queued job before
+  removing B2 objects. Running workers check the tombstone before writes.
 - **What survives**: everything already written to B2 — `source.txt`, the manifest, and
   every chapter MP3 rendered so far. Reruns resume from that per-chapter state rather
   than starting over.
@@ -24,6 +30,13 @@ Reliability expectations and practices for this project.
   after every step, so a crash leaves a consistent, readable snapshot of progress.
 - If ffmpeg is unavailable, chapters still complete and the book is marked `complete`
   with a note in `book.error`; the master can be assembled later once ffmpeg is present.
+
+## Rollout Safety
+
+- Deploy the API version that enqueues Redis/RQ jobs and remove old API instances that
+  can still start FastAPI `BackgroundTasks` before enabling worker resume scans.
+- Keep Redis private to the API and worker network and require authenticated
+  `REDIS_URL`; Redis is part of the trusted control plane for queue metadata.
 
 ## Health Checks
 

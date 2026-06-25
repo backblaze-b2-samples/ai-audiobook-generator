@@ -2,6 +2,8 @@
 
 from datetime import UTC, datetime
 
+import pytest
+
 from app.repo.tts.base import TTSProvider
 from app.service import narration as narration_service
 from app.types import BookSummary, CreateBookRequest, NarrationStatus, Voice
@@ -25,6 +27,18 @@ class FakeProvider(TTSProvider):
         return f"AUDIO[{voice_id}]:{text[:8]}".encode()
 
 
+class FakeLease:
+    def __init__(self):
+        self.refreshes = 0
+        self.released = False
+
+    def refresh(self):
+        self.refreshes += 1
+
+    def release(self):
+        self.released = True
+
+
 def _install_fakes(monkeypatch):
     """Wire narration + books to an in-memory B2 store and fake TTS/ffmpeg."""
     objects: dict[str, bytes] = {}
@@ -38,6 +52,9 @@ def _install_fakes(monkeypatch):
     # Master assembly: pretend ffmpeg produced bytes.
     monkeypatch.setattr(narration_service, "assemble_master", lambda blobs, meta: b"M4B")
     monkeypatch.setattr(narration_service, "read_object", lambda key: objects.get(key))
+    monkeypatch.setattr(narration_service, "acquire_book_lease", lambda book_id: FakeLease())
+    monkeypatch.setattr(narration_service, "is_book_tombstoned", lambda book_id: False)
+    monkeypatch.setattr(narration_service, "current_job_retries_left", lambda: None)
 
     from app.service import books as books_service
 
@@ -45,7 +62,20 @@ def _install_fakes(monkeypatch):
     monkeypatch.setattr(books_service, "read_json", lambda k: manifests.get(k))
     monkeypatch.setattr(books_service, "get_presigned_url", lambda key, filename=None: "url")
     monkeypatch.setattr(books_service, "get_stream_url", lambda key, expires_in=600: "stream")
+    monkeypatch.setattr(books_service, "delete_prefix", _delete_from(objects, manifests))
     return objects, manifests
+
+
+def _delete_from(objects, manifests):
+    def delete_prefix(prefix):
+        deleted = 0
+        for store in (objects, manifests):
+            for key in [k for k in store if k.startswith(prefix)]:
+                del store[key]
+                deleted += 1
+        return deleted
+
+    return delete_prefix
 
 
 def test_create_book_writes_source_and_manifest(monkeypatch):
@@ -179,6 +209,62 @@ def test_run_narration_marks_failed_on_tts_error(monkeypatch):
     assert "provider down" in (final.chapters[0].error or "")
 
 
+def test_run_narration_retries_transient_tts_error(monkeypatch):
+    _install_fakes(monkeypatch)
+    attempts = 0
+
+    class FlakyProvider(FakeProvider):
+        def synthesize(self, text, voice_id):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                from app.repo.tts.base import TTSError
+
+                raise TTSError("temporary provider outage")
+            return super().synthesize(text, voice_id)
+
+    req = CreateBookRequest(title="Retry", text="Chapter 1\nA.")
+    book = narration_service.create_book(req)
+    monkeypatch.setattr(narration_service, "get_provider", lambda: FlakyProvider())
+    monkeypatch.setattr(narration_service, "current_job_retries_left", lambda: 1)
+
+    from app.repo.tts.base import TTSError
+
+    with pytest.raises(TTSError):
+        narration_service.run_narration(book.id)
+
+    mid = narration_service.get_book_detail(book.id)
+    assert mid.status == NarrationStatus.RENDERING
+    assert mid.chapters[0].status == NarrationStatus.RENDERING
+
+    monkeypatch.setattr(narration_service, "current_job_retries_left", lambda: 0)
+    narration_service.run_narration(book.id)
+
+    final = narration_service.get_book_detail(book.id)
+    assert final.status == NarrationStatus.COMPLETE
+    assert attempts == 2
+
+
+def test_run_narration_exits_when_book_lease_unavailable(monkeypatch):
+    objects, _ = _install_fakes(monkeypatch)
+    req = CreateBookRequest(title="Lease", text="Chapter 1\nA.")
+    book = narration_service.create_book(req)
+
+    from app.repo import JobLeaseError
+
+    monkeypatch.setattr(
+        narration_service,
+        "acquire_book_lease",
+        lambda book_id: (_ for _ in ()).throw(JobLeaseError("busy")),
+    )
+
+    narration_service.run_narration(book.id)
+
+    final = narration_service.get_book_detail(book.id)
+    assert final.status == NarrationStatus.PENDING
+    assert sum(1 for key in objects if key.endswith(".mp3")) == 0
+
+
 def test_enqueue_resume_candidates_queues_only_incomplete_books(monkeypatch):
     now = datetime.now(UTC)
     summaries = [
@@ -216,20 +302,30 @@ def test_enqueue_resume_candidates_queues_only_incomplete_books(monkeypatch):
 
     from app.service import books as books_service
 
-    queued: list[str] = []
-    monkeypatch.setattr(books_service, "list_books", lambda: summaries)
+    queued: list[tuple[str, tuple, str]] = []
+    by_id = {summary.id: summary for summary in summaries}
+    monkeypatch.setattr(books_service, "list_book_ids", lambda limit=None: list(by_id))
+    monkeypatch.setattr(books_service, "load_manifest", lambda book_id: by_id[book_id])
     monkeypatch.setattr(
         narration_service,
-        "enqueue_narration",
-        lambda book_id: queued.append(book_id),
+        "enqueue_job",
+        lambda target, args, job_id: queued.append((target, args, job_id)),
     )
 
     count = narration_service.enqueue_resume_candidates()
 
     assert count == 2
     assert queued == [
-        "12345678-1234-1234-1234-123456789abc",
-        "22345678-1234-1234-1234-123456789abc",
+        (
+            narration_service.NARRATION_JOB_TARGET,
+            ("12345678-1234-1234-1234-123456789abc",),
+            "narration:12345678-1234-1234-1234-123456789abc",
+        ),
+        (
+            narration_service.NARRATION_JOB_TARGET,
+            ("22345678-1234-1234-1234-123456789abc",),
+            "narration:22345678-1234-1234-1234-123456789abc",
+        ),
     ]
 
 

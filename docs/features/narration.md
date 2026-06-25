@@ -41,17 +41,24 @@ chapter with a TTS provider, and assemble a final master — all stored in B2.
   → mark `complete` and rewrite manifest
 - All chapters done → status `assembling` → assemble M4B → write `master.m4b` →
   status `complete`
-- Worker startup scans existing manifests and re-enqueues `pending`, `rendering`,
-  and `assembling` books so restarts resume from per-chapter status
+- Worker startup starts queue consumption immediately and runs a bounded resume scan
+  under a Redis lease, re-enqueueing `pending`, `rendering`, and `assembling` books
+  from per-chapter manifest state
+- Each running job holds a per-book Redis lease and checks a delete tombstone before
+  writes; duplicate jobs exit when the lease is busy
+- Transient TTS failures raise back to RQ while retries remain; a book is marked
+  `failed` only after the retry budget is exhausted
 - A single narrator voice narrates the whole book (multi-voice is out of scope for v1)
 
 ## Edge Cases
 - Empty manuscript → `400` (no chapters produced)
 - Missing/invalid TTS key → `502` on create or chapter marked failed at render time
 - TTS failure mid-job → book status `failed` with the error recorded in the manifest
+- Transient TTS failure with retries left → status remains `rendering` and RQ retries
 - ffmpeg missing → chapters still complete; book is `complete` with a "master skipped" note
 - Missing `source.txt` at narration time → book status `failed` (text cannot be repopulated)
 - Server restart → queued work and worker startup resume incomplete manifests from B2
+- Delete while rendering → tombstone causes the worker to stop before later writes
 
 ## UX States
 - Studio: form validation, "Starting…" on submit
@@ -61,8 +68,9 @@ chapter with a TTS provider, and assemble a final master — all stored in B2.
 - Test files: `services/api/tests/test_narration.py`, `services/api/tests/test_chapters.py`, `services/api/tests/test_books.py`
 - Required cases: create writes source+manifest, full render+master, chapter text
   repopulated from source.txt before synthesize (non-empty), resume skips complete
-  chapters, missing source → failed, TTS failure → failed, voice listing, resume
-  candidate enqueueing
+  chapters, transient TTS retry, missing source → failed, terminal TTS failure →
+  failed, voice listing, resume candidate enqueueing, forged job target rejection,
+  enqueue-failure cleanup
 - Quick verify command: `pnpm test:api`
 - Full verify command: `pnpm lint && pnpm lint:api && pnpm test:api && pnpm check:structure`
 - Pass criteria: pytest green, ruff clean

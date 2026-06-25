@@ -144,11 +144,14 @@ def _id_from_prefix(prefix: str) -> str:
     return prefix[len(ROOT_PREFIX):].rstrip("/")
 
 
-def list_books() -> list[BookSummary]:
+def list_book_ids(limit: int | None = None) -> list[str]:
+    return [_id_from_prefix(prefix) for prefix in list_prefixes(ROOT_PREFIX, limit=limit)]
+
+
+def list_books(limit: int | None = None) -> list[BookSummary]:
     """Scan `audiobooks/` folders and read each manifest into a summary."""
     summaries: list[BookSummary] = []
-    for prefix in list_prefixes(ROOT_PREFIX):
-        book_id = _id_from_prefix(prefix)
+    for book_id in list_book_ids(limit=limit):
         raw = read_json(manifest_key(book_id))
         if raw is None:
             continue

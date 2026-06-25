@@ -157,7 +157,7 @@ function checkVenv() {
   if (!existsSync(VENV_UVICORN)) {
     fail(
       "Backend virtualenv not set up (services/api/.venv/bin/uvicorn missing)",
-      "Run: `cd services/api && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && cd ../..`",
+      "Run: `cd services/api && python3 -m venv .venv && source .venv/bin/activate && pip install --require-hashes -r requirements.lock && cd ../..`",
     );
   }
 }

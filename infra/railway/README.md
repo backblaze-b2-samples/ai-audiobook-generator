@@ -5,7 +5,8 @@ Deploy the web, API, worker, and Redis services on Railway.
 ## Setup
 
 1. Create a new Railway project
-2. Add Redis to the project.
+2. Add Redis to the project. Keep it private/network-isolated and use the
+   authenticated Railway connection string for `REDIS_URL`.
 3. Add three services from the same repo:
 
 ### Web Service (Next.js)
@@ -16,18 +17,17 @@ Deploy the web, API, worker, and Redis services on Railway.
 
 ### API Service (FastAPI)
 - **Root Directory**: `services/api`
-- **Build Command**: `pip install -r requirements.txt`
+- **Build Command**: `pip install --require-hashes -r requirements.lock`
 - **Start Command**: `uvicorn main:app --host 0.0.0.0 --port $PORT`
-- **ffmpeg**: the M4B master assembler shells out to `ffmpeg`. Make it available on the
-  API service — add an `apt` package via a Nixpacks/`railway.toml` config (e.g.
-  `nixpacksPlan.phases.setup.aptPkgs = ["ffmpeg"]`) or a Dockerfile that installs it.
-  Without ffmpeg, chapters still render but the master is skipped.
+- **ffmpeg**: not required on the API service. Master assembly runs in the worker.
 
 ### Worker Service (RQ)
 - **Root Directory**: `services/api`
-- **Build Command**: `pip install -r requirements.txt`
+- **Build Command**: `pip install --require-hashes -r requirements.lock`
 - **Start Command**: `python worker.py`
-- **ffmpeg**: install it here too. Master assembly runs in the worker, not the API.
+- **ffmpeg**: required here. Add an `apt` package via a Nixpacks/`railway.toml`
+  config (e.g. `nixpacksPlan.phases.setup.aptPkgs = ["ffmpeg"]`) or a Dockerfile
+  that installs it. Without ffmpeg, chapters still render but the master is skipped.
 
 ## Environment Variables
 
