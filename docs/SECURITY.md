@@ -1,4 +1,4 @@
-<!-- last_verified: 2026-06-02 -->
+<!-- last_verified: 2026-06-25 -->
 # Security
 
 Security principles and implementation for the AI Audiobook Generator.
@@ -6,10 +6,17 @@ Security principles and implementation for the AI Audiobook Generator.
 ## Trust Boundaries
 
 - **Frontend -> API**: CORS-restricted to configured origins, scoped to `GET/POST/DELETE/OPTIONS`
+- **Audiobook route auth**: `/books` list, create, read, stream, download, and delete
+  require `X-Book-Owner` plus `X-Book-Token`. The API validates the token against
+  `BOOK_AUTH_TOKENS` and only returns manifests whose stored `owner_id` matches the
+  authenticated owner. Legacy manifests without `owner_id` load as `local-dev` for
+  local backwards compatibility.
 - **API -> B2**: Authenticated via `B2_APPLICATION_KEY_ID` + `B2_APPLICATION_KEY`, signature v4
 - **API -> TTS provider**: provider key (`OPENAI_API_KEY` / `ELEVENLABS_API_KEY`) read
   from env and used **only** in `repo/tts/`. It never reaches the client and never
   enters a B2 object or manifest.
+- **API / worker -> Redis**: `REDIS_URL` is read from env and used only by the
+  queue adapter in `repo/job_queue.py`. It carries job ids, not manuscript text.
 - **Client -> B2 (download)**: presigned URLs forcing `Content-Disposition: attachment`
   (master M4B, file downloads)
 - **Client -> B2 (stream)**: presigned URLs **without** forced disposition for inline
@@ -30,8 +37,10 @@ Security principles and implementation for the AI Audiobook Generator.
 - Book ids: validated against a strict UUID pattern in `service/books.py::validate_book_id`
   **before** they are interpolated into any B2 key, so a request can never escape the
   `audiobooks/<id>/` prefix
-- The bucket is the only access boundary — add prefix scoping if your deployment shares
-  a bucket with other workloads
+- Book ownership is enforced before returning manifest data, issuing presigned
+  chapter/master URLs, tombstoning queued work, or deleting an audiobook prefix.
+- The bucket is still shared infrastructure. Add B2 application-key prefix scoping if
+  your deployment shares the bucket with other workloads.
 
 ## Download Safety
 
@@ -48,9 +57,18 @@ Security principles and implementation for the AI Audiobook Generator.
 
 ## Secrets Management
 
-- All secrets (B2 keys, TTS provider keys) loaded via environment variables (pydantic-settings)
+- All secrets (B2 keys, TTS provider keys, Redis credentials) loaded via environment
+  variables (pydantic-settings)
+- `BOOK_AUTH_TOKENS` has no runtime default and must be configured explicitly; the
+  sample placeholder token is rejected during API startup.
 - Never committed to source control
 - `.env.example` documents required variables with placeholder values only
+
+## Dependency Integrity
+
+- Production installs use `services/api/requirements.lock` with `--require-hashes`.
+- Redis/RQ queue dependencies are pinned and hash-locked to avoid unreviewed resolver
+  upgrades in API and worker deploys.
 
 ## Agent Security Rules
 

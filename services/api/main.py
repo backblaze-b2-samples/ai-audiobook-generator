@@ -1,8 +1,5 @@
-import json
 import logging
-import sys
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -18,6 +15,8 @@ from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from starlette.middleware.base import BaseHTTPMiddleware  # noqa: E402
 
 from app.config import settings  # noqa: E402
+from app.config.book_auth_tokens import book_auth_tokens_are_valid  # noqa: E402
+from app.config.logging import configure_logging  # noqa: E402
 from app.runtime import books, files, health, metrics, upload  # noqa: E402
 
 # --- Startup validation ---
@@ -31,74 +30,72 @@ REQUIRED_B2_SETTINGS = (
     ("b2_application_key_id", "B2_APPLICATION_KEY_ID"),
     ("b2_application_key", "B2_APPLICATION_KEY"),
     ("b2_bucket_name", "B2_BUCKET_NAME"),
-    ("b2_endpoint", "B2_ENDPOINT"),
     ("b2_region", "B2_REGION"),
 )
+REQUIRED_AUTH_SETTINGS = (("book_auth_tokens", "BOOK_AUTH_TOKENS"),)
 
 # Exact placeholder strings shipped in .env.example. If a user copied
 # the example and didn't edit it, Settings will pass the "non-empty"
 # check above but every B2 call will still 403. Catch that here.
 PLACEHOLDER_VALUES = frozenset({
-    "your_b2_endpoint",
     "your_b2_region",
     "your_application_key_id",
     "your_application_key",
     "your-bucket-name",
+    "local-dev:replace-with-a-random-token",
 })
+BOOK_AUTH_TOKEN_PLACEHOLDER = "replace-with-a-random-token"
+
+
+def _has_book_auth_placeholder(value: str) -> bool:
+    for item in value.split(","):
+        if ":" in item:
+            token = item.split(":", 1)[1]
+        elif "=" in item:
+            token = item.split("=", 1)[1]
+        else:
+            token = item
+        if token.strip() == BOOK_AUTH_TOKEN_PLACEHOLDER:
+            return True
+    return False
 
 
 @asynccontextmanager
 async def lifespan(_app: "FastAPI"):
     missing = [
         env_name
-        for attr, env_name in REQUIRED_B2_SETTINGS
+        for attr, env_name in REQUIRED_B2_SETTINGS + REQUIRED_AUTH_SETTINGS
         if not getattr(settings, attr)
     ]
     if missing:
         raise RuntimeError(
-            "Missing required B2 configuration: "
+            "Missing required configuration: "
             + ", ".join(missing)
             + f". Add them to {REPO_ROOT_ENV} (see .env.example) and restart."
         )
 
     placeholders = [
         env_name
-        for attr, env_name in REQUIRED_B2_SETTINGS
+        for attr, env_name in REQUIRED_B2_SETTINGS + REQUIRED_AUTH_SETTINGS
         if getattr(settings, attr) in PLACEHOLDER_VALUES
+        or (attr == "book_auth_tokens" and _has_book_auth_placeholder(getattr(settings, attr)))
     ]
     if placeholders:
         raise RuntimeError(
-            "B2 configuration still has placeholder values: "
+            "Configuration still has placeholder values: "
             + ", ".join(placeholders)
-            + f". Edit {REPO_ROOT_ENV} with your real B2 credentials and restart."
+            + f". Edit {REPO_ROOT_ENV} with your real configuration values and restart."
+        )
+
+    if not book_auth_tokens_are_valid(settings.book_auth_tokens):
+        raise RuntimeError(
+            "Invalid BOOK_AUTH_TOKENS format. Set at least one owner:token "
+            + f"entry in {REPO_ROOT_ENV} and restart."
         )
     yield
 
-# --- Structured JSON logging ---
 
-class JSONFormatter(logging.Formatter):
-    def format(self, record: logging.LogRecord) -> str:
-        log_entry = {
-            "timestamp": datetime.now(UTC).isoformat(),
-            "level": record.levelname,
-            "logger": record.name,
-            "message": record.getMessage(),
-        }
-        if hasattr(record, "request_id"):
-            log_entry["request_id"] = record.request_id
-        if record.exc_info and record.exc_info[1]:
-            log_entry["exception"] = str(record.exc_info[1])
-        return json.dumps(log_entry)
-
-
-handler = logging.StreamHandler(sys.stdout)
-handler.setFormatter(JSONFormatter())
-logging.root.handlers = [handler]
-logging.root.setLevel(logging.INFO)
-# Quiet noisy libraries
-logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
-logging.getLogger("botocore").setLevel(logging.WARNING)
-logging.getLogger("urllib3").setLevel(logging.WARNING)
+configure_logging()
 
 logger = logging.getLogger("api")
 
@@ -120,7 +117,7 @@ app.add_middleware(
     allow_origin_regex=settings.api_cors_origin_regex or None,
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_headers=["Content-Type", "Authorization", "X-Book-Owner", "X-Book-Token"],
 )
 
 # Request ID + timing middleware

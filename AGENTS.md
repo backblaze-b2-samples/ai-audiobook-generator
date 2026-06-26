@@ -1,4 +1,4 @@
-<!-- last_verified: 2026-06-02 -->
+<!-- last_verified: 2026-06-25 -->
 # AGENTS.md
 
 This is the authoritative control surface for all coding agents. Read this first.
@@ -17,6 +17,7 @@ apps/web/          Next.js 16 frontend (App Router, Tailwind v4, shadcn/ui)
 services/api/      FastAPI backend (layered: types/config/repo/service/runtime)
   app/repo/tts/        Provider-agnostic TTS adapter (openai default, elevenlabs alt)
   app/repo/audio_master.py  ffmpeg M4B assembler (subprocess)
+  app/repo/job_queue.py    Redis/RQ durable narration queue adapter
   app/repo/books_store.py   B2 access for the audiobook domain
   app/service/         chapters (split), narration (job), books (manifest CRUD)
 packages/shared/   Shared TypeScript types (mirror the Pydantic models)
@@ -110,9 +111,10 @@ the starter.
 
 ```bash
 # Run
-pnpm dev               # start both frontend and backend
+pnpm dev               # start frontend, backend, and narration worker
 pnpm dev:web           # frontend only
 pnpm dev:api           # backend only
+pnpm dev:worker        # narration worker only
 
 # Test & Lint
 pnpm lint              # frontend lint (eslint)

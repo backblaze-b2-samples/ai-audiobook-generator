@@ -1,4 +1,4 @@
-<!-- last_verified: 2026-06-02 -->
+<!-- last_verified: 2026-06-25 -->
 # Architecture
 
 ## Components
@@ -12,6 +12,7 @@
 - **services/api/** — FastAPI backend (layered architecture)
   - Narration job orchestration (split → TTS per chapter → master assembly)
   - Manifest CRUD over B2 (B2 is the sole datastore — no database)
+  - Durable Redis/RQ queue for narration workers
   - Provider-agnostic TTS adapter (OpenAI default, ElevenLabs alt)
   - ffmpeg M4B master assembler (subprocess)
   - B2 S3 integration via boto3 (S3-compatible only — no b2-native API)
@@ -65,6 +66,9 @@ Every external dependency is wrapped in a `repo/` adapter, mirroring the boto3 r
   `elevenlabs_provider.py` alt). Each adapter **lazy-imports its own SDK**, so only
   the active provider's package needs installing. Selected by `TTS_PROVIDER`.
 - **ffmpeg** — `repo/audio_master.py`, invoked via `subprocess` to build the M4B master.
+- **Redis/RQ** — `repo/job_queue.py`, used only for durable narration job enqueueing
+  and worker execution. Jobs use RQ's JSON serializer and a restricted worker that
+  accepts only the stable narration target with a UUID book id.
 
 ### Directory Structure
 
@@ -84,14 +88,19 @@ services/api/
 
 1. `POST /books` → `service.narration.create_book`: split manuscript into chapters
    (`service.chapters`), pick the narrator voice, write `source.txt` + an initial
-   `manifest.json` (status `pending`), return `202`. The router schedules
-   `run_narration(book.id)` as a FastAPI **BackgroundTask** (in-process).
-2. `run_narration`: status → `rendering`; for each chapter, `tts.synthesize` →
-   `books_store.put_bytes` (chapter MP3) → extract duration (mutagen) → rewrite manifest.
+   `manifest.json` (status `pending`), enqueue `run_narration(book.id)` in Redis/RQ,
+   return `202`.
+2. An RQ worker validates the job target and UUID argument, acquires a per-book
+   Redis lease, then runs `run_narration`: status → `rendering`; for each incomplete
+   chapter, mark it `rendering`, `tts.synthesize` → `books_store.put_bytes`
+   (chapter MP3) → extract duration (mutagen) → mark the chapter `complete` and
+   rewrite the manifest. Reruns skip chapters already marked `complete`.
 3. All chapters done → status `assembling` → `audio_master.assemble_master` (ffmpeg
    concat + chapter markers) → write `master.m4b` → status `complete`.
 4. If ffmpeg is unavailable, chapters remain playable and the book is marked
    `complete` with a note that master assembly was skipped.
+5. Worker startup starts queue consumption immediately and runs a bounded, lease-held
+   resume scan for `pending`, `rendering`, and `assembling` books.
 
 The frontend polls `GET /books/{id}` (and `GET /books`) via TanStack Query while a
 job is in flight, and plays finished chapters from presigned, non-attachment B2 URLs
@@ -109,9 +118,10 @@ job is in flight, and plays finished chapters from presigned, non-attachment B2 
 
 ## Deployment
 
-- **Local dev** — `pnpm dev` runs both services (Web: `localhost:3000`, API: `localhost:8000`)
-- **Railway** — two services from the same repo; see `infra/railway/README.md`
-  (the API service needs the ffmpeg buildpack/apt package for master assembly)
+- **Local dev** — `pnpm dev` runs web, API, and worker (Web: `localhost:3000`,
+  API: `localhost:8000`; Redis is required at `REDIS_URL`)
+- **Railway** — web, API, worker, and Redis services; see `infra/railway/README.md`
+  (the worker needs the ffmpeg buildpack/apt package for master assembly)
 
 ## Data Stores
 
@@ -124,6 +134,7 @@ job is in flight, and plays finished chapters from presigned, non-attachment B2 
 ## External Services
 
 - **Backblaze B2 S3 API** — storage, retrieval, deletion, presigned URLs
+- **Redis** — durable RQ queue for narration jobs
 - **TTS provider** — OpenAI (default) or ElevenLabs (alt) for chapter narration
 
 ## Trust Boundaries
@@ -138,8 +149,8 @@ See [docs/SECURITY.md](docs/SECURITY.md) for full security documentation.
 
 ## Data Flows
 
-- **Create**: Browser -> `POST /books` -> split + write source/manifest -> 202 ->
-  background narration renders chapters and assembles master, rewriting the manifest
+- **Create**: Browser -> `POST /books` -> split + write source/manifest -> enqueue
+  RQ job -> 202 -> worker renders chapters and assembles master, rewriting the manifest
 - **List / detail**: Browser -> `GET /books` / `GET /books/{id}` -> read manifests
 - **Stream**: Browser -> `GET /books/{id}/chapters/{n}/stream` -> presigned inline URL
   -> `<audio>` streams from B2 (Range reads)
@@ -158,6 +169,8 @@ See [docs/SECURITY.md](docs/SECURITY.md) for full security documentation.
 - Narration orchestration: `services/api/app/service/narration.py`
 - Chapter splitting: `services/api/app/service/chapters.py`
 - Manifest CRUD: `services/api/app/service/books.py`
+- Durable queue adapter: `services/api/app/repo/job_queue.py`
+- Worker entrypoint: `services/api/worker.py`
 - TTS adapter: `services/api/app/repo/tts/` (`base.py`, `openai_provider.py`, `elevenlabs_provider.py`)
 - ffmpeg assembler: `services/api/app/repo/audio_master.py`
 - B2 data access (repo layer): `services/api/app/repo/b2_client.py`, `services/api/app/repo/books_store.py`

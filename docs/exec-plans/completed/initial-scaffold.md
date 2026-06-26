@@ -182,7 +182,8 @@ All operations are **S3-compatible — no b2-native API anywhere** (Standard #1 
 | delete a book | `delete_objects` (batch) | delete all keys under `audiobooks/<id>/` |
 
 - **Single boto3 S3 client** (`functools.lru_cache`), `signature_version="s3v4"`,
-  `region_name=settings.b2_region`, **`user_agent_extra="b2ai-audiobook-generator"`**
+  `region_name=settings.b2_region`,
+  **`user_agent_extra="b2ai-ai-audiobook-generator (backblaze-b2-samples)"`**
   (custom UA on every client — Standard #2 ✓; see §6 for tag rationale).
 - boto3 stays **only** in `repo/` (structural test enforces). TTS SDK + ffmpeg
   are likewise contained in `repo/`.
@@ -243,7 +244,7 @@ All operations are **S3-compatible — no b2-native API anywhere** (Standard #1 
 | header breadcrumb | `oss-starter-kit` | `ai-audiobook-generator` |
 | FastAPI `title` | `OSS Starter Kit API` | `AI Audiobook Generator API` |
 | clone URL in README | `…/vibe-coding-starter-kit.git` | `…/ai-audiobook-generator.git` |
-| **UA `user_agent_extra`** | `b2ai-oss-start` | **`b2ai-audiobook-generator`** |
+| **UA `user_agent_extra`** | `b2ai-oss-start` | **`b2ai-ai-audiobook-generator (backblaze-b2-samples)`** |
 | **UTM `utm_content`** (all links) | `b2ai-oss-start` | **`b2ai-audiobook-generator`** |
 | snake_case package | *(none — no Python package name declared)* | n/a |
 | Docker/image tags | *(none present)* | n/a |
@@ -257,25 +258,25 @@ Files touched by the rename (from the identifier sweep): root `package.json`
 reference, see below), `services/api/app/repo/b2_client.py` (UA),
 `app-sidebar.tsx` (brand + UTM), `header.tsx` (breadcrumb), `scripts/doctor.mjs` (UTM).
 
-**UA/UTM tag rationale:** the parent convention is `b2ai-<name>`; the starter's
-value `b2ai-oss-start` uses a short descriptive name, not the repo slug. I use
-**`b2ai-audiobook-generator`** (short, descriptive, no redundant double-"ai").
-*Flagged for confirmation.*
+**UA/UTM tag rationale:** the B2 SDK user agent uses the exact sample marker
+**`b2ai-ai-audiobook-generator (backblaze-b2-samples)`**. UTM values remain
+short slugs for links.
 
 ---
 
 ## 7. Deliberate deviation from the starter — env-var standardization (needs sign-off)
 
-The starter uses `B2_KEY_ID` and has no `B2_REGION`. The **parent CLAUDE.md
-Standard #3** mandates `B2_APPLICATION_KEY_ID`, `B2_APPLICATION_KEY`,
-`B2_BUCKET_NAME`, `B2_REGION`, `B2_ENDPOINT`, and `/b2-doctor` audits for exactly
-those. To pass review, the new sample will:
+The starter uses `B2_KEY_ID` and has no `B2_REGION`. The B2 sample standard uses
+`B2_APPLICATION_KEY_ID`, `B2_APPLICATION_KEY`, `B2_BUCKET_NAME`, and `B2_REGION`,
+then derives the S3 endpoint from `B2_REGION`. `/b2-doctor` audits the active
+required env vars. To pass review, the new sample will:
 - rename `B2_KEY_ID` → **`B2_APPLICATION_KEY_ID`** (`.env.example`, `settings.py`,
   `main.py` required-settings + placeholder lists, `b2_client.py`, README,
   `doctor.mjs`);
-- add **`B2_REGION`** (passed as `region_name` to the boto3 client);
-- keep `B2_ENDPOINT`, `B2_APPLICATION_KEY`, `B2_BUCKET_NAME`; keep optional
-  `B2_PUBLIC_URL`.
+- add **`B2_REGION`** (passed as `region_name` and used to derive
+  `https://s3.<B2_REGION>.backblazeb2.com`);
+- keep `B2_APPLICATION_KEY`, `B2_BUCKET_NAME`; keep optional
+  `B2_PUBLIC_URL_BASE`.
 - App-specific new env: `TTS_PROVIDER` (default `openai`), `OPENAI_API_KEY`
   (default provider), `ELEVENLABS_API_KEY` (optional alt), `TTS_DEFAULT_VOICE`.
 
@@ -289,7 +290,9 @@ those. To pass review, the new sample will:
    (requires ffmpeg).
 3. **Multi-voice dialogue** — ✅ **single narrator only**; multi-voice /
    per-speaker narration is **out of scope for v1** (documented as future).
-4. **UA/UTM tag** — ✅ `b2ai-audiobook-generator`.
+4. **UA/UTM tag** — ✅ SDK UA
+   `b2ai-ai-audiobook-generator (backblaze-b2-samples)`, UTM slug
+   `b2ai-audiobook-generator`.
 
 ---
 

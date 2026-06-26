@@ -11,6 +11,22 @@ async def client():
         yield ac
 
 
+@pytest.fixture
+def auth_headers():
+    return {"X-Book-Owner": "local-dev", "X-Book-Token": "dev-book-token"}
+
+
+@pytest.fixture(autouse=True)
+def configure_book_auth(monkeypatch):
+    from app.config import settings
+    from app.runtime import book_auth
+
+    monkeypatch.setattr(settings, "book_auth_tokens", "local-dev:dev-book-token")
+    book_auth._configured_tokens.cache_clear()
+    yield
+    book_auth._configured_tokens.cache_clear()
+
+
 @pytest.fixture(autouse=True)
 def isolate_download_counter(tmp_path, monkeypatch):
     """Redirect the persisted download counter to a temp file per test and

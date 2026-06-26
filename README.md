@@ -1,4 +1,4 @@
-<!-- last_verified: 2026-06-03 -->
+<!-- last_verified: 2026-06-25 -->
 # AI Audiobook Generator
 
 Turn a long manuscript — a book, an ebook, a blog series, or any pasted text —
@@ -7,7 +7,7 @@ audio render, and the final master all stored in a single [Backblaze B2](https:/
 
 This app exercises:
 
-- **Long-running generation jobs** — chapters are narrated one by one in the background.
+- **Durable long-running generation jobs** — chapters are narrated one by one by a Redis/RQ worker.
 - **Many-object writes under a per-book prefix** — source, manifest, N chapter MP3s, and a master.
 - **B2 as the sole datastore** — a JSON manifest per book; there is no database.
 - **Streaming / Range reads** — the browser plays chapter audio straight from presigned B2 URLs.
@@ -55,18 +55,20 @@ uploads/<file>                           generic Upload page (kept, unchanged)
 ```
 
 1. `POST /books` splits the manuscript into chapters, writes `source.txt` + an
-   initial `manifest.json` (status `pending`), and kicks off narration in the
-   background.
-2. For each chapter: synthesize audio with the TTS provider, write the MP3 to B2,
-   read its duration, and rewrite the manifest.
+   initial `manifest.json` (status `pending`), and enqueues a durable Redis/RQ
+   narration job.
+2. The worker resumes from `manifest.json`; for each incomplete chapter, synthesize
+   audio with the TTS provider, write the MP3 to B2, read its duration, and rewrite
+   the manifest.
 3. When every chapter is rendered, assemble a chapterized **M4B** master with
    ffmpeg, write it to B2, and mark the book `complete`.
 4. The Library polls `GET /books/{id}` while a job is in flight and streams each
    finished chapter from a presigned, non-attachment B2 URL.
 
 All B2 access is **S3-compatible — there is no b2-native API anywhere**. A single
-boto3 S3 client (signature v4, custom user agent `b2ai-audiobook-generator`) lives
-in `services/api/app/repo/`.
+boto3 S3 client (signature v4, custom user agent
+`b2ai-ai-audiobook-generator (backblaze-b2-samples)`) lives in
+`services/api/app/repo/`.
 
 ## Agent-First Architecture
 
@@ -89,8 +91,8 @@ docs/
 
 ## Quick Start
 
-You need: Node.js >= 20, pnpm >= 9, Python >= 3.11, **ffmpeg** (for the M4B master),
-a free **[Backblaze B2 account](https://www.backblaze.com/sign-up/ai-cloud-storage?utm_source=github&utm_medium=referral&utm_campaign=ai_artifacts&utm_content=b2ai-audiobook-generator)**,
+You need: Node.js >= 20, pnpm >= 9, Python >= 3.11, **Redis** (for the durable
+queue), **ffmpeg** (for the M4B master), a free **[Backblaze B2 account](https://www.backblaze.com/sign-up/ai-cloud-storage?utm_source=github&utm_medium=referral&utm_campaign=ai_artifacts&utm_content=b2ai-audiobook-generator)**,
 and a text-to-speech provider key (OpenAI by default).
 
 ### Start a new project
@@ -121,16 +123,27 @@ sudo apt install ffmpeg
 
 Per-chapter MP3s still render without ffmpeg; only the M4B master needs it.
 
-**3. Set up the backend**
+**3. Install and start Redis** (used by the durable narration queue)
+
+```bash
+# macOS
+brew install redis
+redis-server
+# Debian / Ubuntu
+sudo apt install redis-server
+sudo systemctl start redis-server
+```
+
+**4. Set up the backend**
 
 ```bash
 cd services/api
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install --require-hashes -r requirements.lock
 cd ../..
 ```
 
-**4. Add your credentials**
+**5. Add your credentials**
 
 ```bash
 cp .env.example .env
@@ -139,27 +152,38 @@ cp .env.example .env
 Open `.env` and fill in:
 
 - From the [Backblaze B2 dashboard](https://secure.backblaze.com/b2_buckets.htm?utm_source=github&utm_medium=referral&utm_campaign=ai_artifacts&utm_content=b2ai-audiobook-generator):
-  - **Create a bucket** → `B2_BUCKET_NAME`, **Endpoint** → `B2_ENDPOINT`, and the
-    region segment of that endpoint (e.g. `us-west-004`) → `B2_REGION`.
+  - **Create a bucket** → `B2_BUCKET_NAME`, and set `B2_REGION` to the bucket
+    region (e.g. `us-west-004`). The app derives the B2 S3 endpoint as
+    `https://s3.<B2_REGION>.backblazeb2.com`.
   - **Create an application key** with `Read and Write` permission → **keyID** →
     `B2_APPLICATION_KEY_ID`, **applicationKey** → `B2_APPLICATION_KEY` *(shown once)*.
 - Your TTS key: `OPENAI_API_KEY` for the default OpenAI provider. To use ElevenLabs
   instead, set `TTS_PROVIDER=elevenlabs`, run `pip install elevenlabs`, and set
   `ELEVENLABS_API_KEY`.
+- Redis queue URL: `REDIS_URL` defaults to `redis://localhost:6379/0`.
+- Audiobook route auth: set `BOOK_AUTH_TOKENS` on the API as
+  `owner-id:strong-random-token`, and set matching `NEXT_PUBLIC_BOOK_OWNER` and
+  `NEXT_PUBLIC_BOOK_TOKEN` on the web app for this sample deployment. Do not use
+  the placeholder token from `.env.example`.
+- Worker resume scans: leave `NARRATION_RESUME_SCAN_ENABLED=false` while rolling out
+  from any old API instances that used in-process background jobs. Enable it on the
+  worker only after those API instances are drained. Tune
+  `NARRATION_RESUME_SCAN_MAX_MANIFESTS` to cap each worker-start scan pass.
 
 > Walkthroughs: [creating a bucket](https://www.backblaze.com/docs/cloud-storage-create-and-manage-buckets?utm_source=github&utm_medium=referral&utm_campaign=ai_artifacts&utm_content=b2ai-audiobook-generator) ·
 > [creating app keys](https://www.backblaze.com/docs/cloud-storage-create-and-manage-app-keys?utm_source=github&utm_medium=referral&utm_campaign=ai_artifacts&utm_content=b2ai-audiobook-generator).
 
-**5. Run it**
+**6. Run it**
 
 ```bash
 pnpm dev
 ```
 
-Frontend at `localhost:3000`, API at `localhost:8000`. `pnpm dev` first runs
+Frontend at `localhost:3000`, API at `localhost:8000`, worker in the same terminal.
+`pnpm dev` first runs
 `pnpm doctor`, a preflight that checks Node/Python/pnpm versions, ffmpeg, the
-venv, and your `.env` (missing or placeholder B2 vars), telling you exactly how
-to fix each issue. Run it any time with `pnpm doctor`.
+venv, Redis, and your `.env` (missing or placeholder required vars), telling you
+exactly how to fix each issue. Run it any time with `pnpm doctor`.
 
 ## Core Features
 
@@ -177,6 +201,7 @@ to fix each issue. Run it any time with `pnpm doctor`.
 - TypeScript, Next.js 16, React 19, Tailwind v4, shadcn/ui, Recharts
 - TanStack Query — caching, dedup, retry, and polling for in-flight narration jobs
 - Python 3.11+, FastAPI, boto3 (S3-compatible), Pydantic v2, mutagen, openai
+- Redis + RQ — durable narration queue and worker
 - ffmpeg (M4B master assembly)
 - Backblaze B2 (S3-compatible object storage) — source, manifests, audio, and master
 - pnpm workspaces (monorepo)
@@ -185,9 +210,10 @@ to fix each issue. Run it any time with `pnpm doctor`.
 
 | Command | What it does |
 |---------|-------------|
-| `pnpm dev` | Start frontend + backend |
+| `pnpm dev` | Start frontend + backend + narration worker |
 | `pnpm dev:web` | Frontend only |
 | `pnpm dev:api` | Backend only |
+| `pnpm dev:worker` | Narration worker only |
 | `pnpm build` | Build frontend |
 | `pnpm lint` | Lint frontend |
 | `pnpm lint:api` | Lint backend (ruff) |

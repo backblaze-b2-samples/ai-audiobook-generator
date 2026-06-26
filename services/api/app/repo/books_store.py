@@ -55,7 +55,11 @@ def read_json(key: str) -> dict | None:
     return json.loads(raw)
 
 
-def list_prefixes(prefix: str) -> list[str]:
+def list_prefixes(
+    prefix: str,
+    limit: int | None = None,
+    start_after: str | None = None,
+) -> list[str]:
     """List immediate sub-prefixes under `prefix` (S3 Delimiter='/').
 
     Used to enumerate per-book folders under `audiobooks/`. Returns the full
@@ -68,11 +72,15 @@ def list_prefixes(prefix: str) -> list[str]:
         "Prefix": prefix,
         "Delimiter": "/",
     }
+    if start_after:
+        kwargs["StartAfter"] = start_after
     try:
         while True:
             response = client.list_objects_v2(**kwargs)
             for cp in response.get("CommonPrefixes", []):
                 prefixes.append(cp["Prefix"])
+                if limit is not None and len(prefixes) >= limit:
+                    return prefixes
             if not response.get("IsTruncated"):
                 break
             kwargs["ContinuationToken"] = response["NextContinuationToken"]

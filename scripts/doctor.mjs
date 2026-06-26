@@ -10,7 +10,7 @@
 // Run via pnpm:  pnpm doctor
 
 import { existsSync, readFileSync } from "node:fs";
-import { createServer } from "node:net";
+import { createConnection, createServer } from "node:net";
 import { execSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,30 +18,56 @@ import { fileURLToPath } from "node:url";
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ENV_FILE = resolve(REPO_ROOT, ".env");
 const VENV_UVICORN = resolve(REPO_ROOT, "services/api/.venv/bin/uvicorn");
+const DEFAULT_REDIS_URL = "redis://localhost:6379/0";
 
 // Required minimum versions. Bump as upstream support shifts.
 const REQUIRED_NODE_MAJOR = 20;
 const REQUIRED_PNPM_MAJOR = 9;
 const REQUIRED_PYTHON_MINOR = 11; // 3.11+
 
-// Required B2 env vars + the exact placeholder strings shipped in
-// .env.example. Keep in sync with services/api/main.py REQUIRED_B2_SETTINGS
+// Required boot env vars + the exact placeholder strings shipped in
+// .env.example. Keep in sync with services/api/main.py REQUIRED_*_SETTINGS
 // and PLACEHOLDER_VALUES. (TTS_PROVIDER / OPENAI_API_KEY are validated at
 // narration time, not here, so a key isn't required just to boot the app.)
 const REQUIRED_B2_VARS = [
-  "B2_ENDPOINT",
   "B2_REGION",
   "B2_APPLICATION_KEY_ID",
   "B2_APPLICATION_KEY",
   "B2_BUCKET_NAME",
 ];
+const REQUIRED_AUTH_VARS = ["BOOK_AUTH_TOKENS"];
+const REQUIRED_ENV_VARS = [...REQUIRED_B2_VARS, ...REQUIRED_AUTH_VARS];
 const PLACEHOLDERS = new Set([
-  "your_b2_endpoint",
   "your_b2_region",
   "your_application_key_id",
   "your_application_key",
   "your-bucket-name",
+  "local-dev:replace-with-a-random-token",
 ]);
+const BOOK_AUTH_TOKEN_PLACEHOLDER = "replace-with-a-random-token";
+
+function parseBookAuthEntry(value) {
+  const item = value.trim();
+  const sep = item.includes(":") ? ":" : item.includes("=") ? "=" : null;
+  if (!sep) return null;
+  const sepIndex = item.indexOf(sep);
+  const owner = item.slice(0, sepIndex).trim();
+  const token = item.slice(sepIndex + 1).trim();
+  return owner && token ? { owner, token } : null;
+}
+
+export function hasBookAuthPlaceholder(value) {
+  return value.split(",").some((item) => {
+    const parsed = parseBookAuthEntry(item);
+    const token = parsed ? parsed.token : item.trim();
+    return token.trim() === BOOK_AUTH_TOKEN_PLACEHOLDER;
+  });
+}
+
+export function bookAuthTokensAreValid(value) {
+  const entries = value.split(",").filter((item) => item.trim());
+  return entries.length > 0 && entries.every((item) => parseBookAuthEntry(item));
+}
 
 // Only Next.js: `pnpm dev` self-heals the API side via scripts/pick-port.mjs,
 // so warning about 8000 here would just duplicate dev.sh's own banner.
@@ -156,7 +182,7 @@ function checkVenv() {
   if (!existsSync(VENV_UVICORN)) {
     fail(
       "Backend virtualenv not set up (services/api/.venv/bin/uvicorn missing)",
-      "Run: `cd services/api && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && cd ../..`",
+      "Run: `cd services/api && python3 -m venv .venv && source .venv/bin/activate && pip install --require-hashes -r requirements.lock && cd ../..`",
     );
   }
 }
@@ -190,20 +216,26 @@ function checkEnv() {
     return;
   }
   const env = parseEnvFile(ENV_FILE);
-  const missing = REQUIRED_B2_VARS.filter((k) => !env[k]);
+  const missing = REQUIRED_ENV_VARS.filter((k) => !env[k]);
   if (missing.length > 0) {
     fail(
-      `.env is missing required B2 variables: ${missing.join(", ")}`,
+      `.env is missing required variables: ${missing.join(", ")}`,
       "See .env.example for the full list and edit .env to add them",
     );
   }
-  const placeholders = REQUIRED_B2_VARS.filter(
-    (k) => env[k] && PLACEHOLDERS.has(env[k]),
+  const placeholders = REQUIRED_ENV_VARS.filter(
+    (k) => env[k] && (PLACEHOLDERS.has(env[k]) || (k === "BOOK_AUTH_TOKENS" && hasBookAuthPlaceholder(env[k]))),
   );
   if (placeholders.length > 0) {
     fail(
       `.env still has placeholder values: ${placeholders.join(", ")}`,
-      "Edit .env and replace placeholders with your real B2 credentials (https://secure.backblaze.com/app_keys.htm?utm_source=github&utm_medium=referral&utm_campaign=ai_artifacts&utm_content=b2ai-audiobook-generator)",
+      "Edit .env and replace placeholders with your real configuration values (B2 keys: https://secure.backblaze.com/app_keys.htm?utm_source=github&utm_medium=referral&utm_campaign=ai_artifacts&utm_content=b2ai-audiobook-generator)",
+    );
+  }
+  if (env.BOOK_AUTH_TOKENS && !bookAuthTokensAreValid(env.BOOK_AUTH_TOKENS)) {
+    fail(
+      "BOOK_AUTH_TOKENS has invalid format",
+      "Set BOOK_AUTH_TOKENS as owner:strong-random-token or owner=strong-random-token",
     );
   }
 }
@@ -218,6 +250,64 @@ function isPortBoundOn(port, host) {
     server.once("listening", () => server.close(() => res(false)));
     server.listen(port, host);
   });
+}
+
+function redisUrlFromEnv() {
+  if (!existsSync(ENV_FILE)) return DEFAULT_REDIS_URL;
+  const env = parseEnvFile(ENV_FILE);
+  return env.REDIS_URL || DEFAULT_REDIS_URL;
+}
+
+export function redisUrlInvalidMessage() {
+  return "REDIS_URL is invalid";
+}
+
+function canConnect(port, host) {
+  return new Promise((res) => {
+    const socket = createConnection({ port, host });
+    socket.setTimeout(1000);
+    socket.once("connect", () => {
+      socket.destroy();
+      res(true);
+    });
+    socket.once("timeout", () => {
+      socket.destroy();
+      res(false);
+    });
+    socket.once("error", () => {
+      socket.destroy();
+      res(false);
+    });
+  });
+}
+
+async function checkRedis() {
+  const redisUrl = redisUrlFromEnv();
+  let parsed;
+  try {
+    parsed = new URL(redisUrl);
+  } catch {
+    fail(
+      redisUrlInvalidMessage(),
+      "Set REDIS_URL to a Redis connection string, e.g. `redis://localhost:6379/0`",
+    );
+    return;
+  }
+  if (parsed.protocol !== "redis:" && parsed.protocol !== "rediss:") {
+    fail(
+      `REDIS_URL must use redis:// or rediss://, got ${parsed.protocol}`,
+      "Set REDIS_URL to a Redis connection string, e.g. `redis://localhost:6379/0`",
+    );
+    return;
+  }
+  const host = parsed.hostname || "localhost";
+  const port = Number(parsed.port || 6379);
+  if (!(await canConnect(port, host))) {
+    fail(
+      `Redis queue is not reachable at ${host}:${port}`,
+      "Start Redis locally (`redis-server`) or set REDIS_URL to a reachable Redis instance. Narration jobs run through Redis/RQ.",
+    );
+  }
 }
 
 // We probe the wildcard interfaces (0.0.0.0 and ::) because that's what
@@ -249,6 +339,7 @@ async function main() {
   checkFfmpeg();
   checkVenv();
   checkEnv();
+  await checkRedis();
   await Promise.all(PORTS_TO_CHECK.map(checkPort));
 
   if (failures.length === 0 && warnings.length === 0) {
@@ -279,4 +370,6 @@ async function main() {
   console.error("\nProceeding despite warnings.\n");
 }
 
-main();
+if (process.env.DOCTOR_SKIP_MAIN !== "1") {
+  main();
+}

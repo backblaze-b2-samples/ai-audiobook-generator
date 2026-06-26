@@ -1,4 +1,4 @@
-<!-- last_verified: 2026-06-02 -->
+<!-- last_verified: 2026-06-25 -->
 # Dev Workflows
 
 Engineering workflows for this repo.
@@ -6,9 +6,14 @@ Engineering workflows for this repo.
 ## Prerequisites
 
 - Node.js >= 20, pnpm >= 9, Python >= 3.11
+- **Redis** reachable at `REDIS_URL` (default `redis://localhost:6379/0`) for the
+  durable narration queue.
 - **ffmpeg** on PATH (M4B master assembly). Per-chapter MP3s render without it;
   `pnpm doctor` warns when it's missing.
 - A TTS provider key in `.env` (OpenAI by default: `OPENAI_API_KEY`).
+- Install backend dependencies from `services/api/requirements.lock` with
+  `pip install --require-hashes -r requirements.lock`; update the lock with
+  `pip-compile --generate-hashes` after dependency changes.
 
 ## New Feature
 
@@ -74,6 +79,7 @@ and book stats.
 - Frontend typecheck: `pnpm typecheck`
 - Frontend lint: `pnpm lint`
 - Backend lint: `pnpm lint:api`
+- Worker: `pnpm dev:worker`
 - Full suite: `pnpm typecheck && pnpm lint && pnpm lint:api && pnpm test:api && pnpm check:structure`
 - E2E: `pnpm test:e2e` (run `pnpm --filter @ai-audiobook-generator/web exec playwright install chromium` once first)
 

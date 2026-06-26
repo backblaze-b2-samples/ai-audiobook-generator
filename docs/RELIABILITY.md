@@ -1,19 +1,36 @@
-<!-- last_verified: 2026-06-02 -->
+<!-- last_verified: 2026-06-25 -->
 # Reliability
 
 Reliability expectations and practices for this project.
 
-## Narration Jobs (in-process — known limitation)
+## Narration Jobs (durable queue)
 
-- Narration runs as a FastAPI **BackgroundTask** in the API process. This is simple
-  and dependency-free, but **a server restart loses any in-flight job**: the manifest
-  is left at `rendering`/`assembling` and the worker does not auto-resume.
+- Narration runs through Redis/RQ. `POST /books` writes `source.txt` and
+  `manifest.json`, then enqueues a stable `narration:<book-id>` job for the worker.
+- The API process no longer owns in-flight work. If the API restarts, queued jobs
+  remain in Redis and the worker keeps using the manifest in B2 as the source of truth.
+- Worker startup begins queue consumption immediately. When
+  `NARRATION_RESUME_SCAN_ENABLED=true`, a background resume scan walks every
+  audiobook manifest over bounded worker-start passes, logs progress every
+  `NARRATION_RESUME_SCAN_BATCH_SIZE` manifests, and re-enqueues books in `pending`,
+  `rendering`, or `assembling` under a Redis scan lease. The Redis cursor lets later
+  starts continue after `NARRATION_RESUME_SCAN_MAX_MANIFESTS` instead of re-reading
+  only the first prefixes.
+- `run_narration` skips chapters already marked `complete` with an `audio_key`; pending,
+  rendering, or failed chapters are retried from the durable source manuscript.
+- Workers acquire a per-book Redis lease before rendering and refresh it after each
+  manifest/object write. Lease contention raises back to RQ so the job retries
+  instead of being recorded as successful.
+- TTS failures raise back to RQ while retries remain; only the final exhausted attempt
+  marks the book `failed`.
+- Non-TTS worker failures also raise while retries remain and write a sanitized
+  terminal `failed` manifest when the retry budget is exhausted.
+- DELETE writes a short-lived Redis tombstone and cancels any queued job before
+  removing in-flight B2 objects. Completed and failed audiobooks can be deleted
+  without Redis because no worker should still write to them.
 - **What survives**: everything already written to B2 — `source.txt`, the manifest, and
-  every chapter MP3 rendered so far. Nothing is lost from B2; only the in-memory job is.
-- `run_narration` is written to skip chapters already marked `complete`, so a manual
-  re-trigger would resume rather than re-render — but there is no automatic resume in v1.
-- Production hardening (tracked in `docs/exec-plans/tech-debt-tracker.md`): move to a
-  durable worker/queue and resume from the manifest's per-chapter status.
+  every chapter MP3 rendered so far. Reruns resume from that per-chapter state rather
+  than starting over.
 
 ## Manifest Durability
 
@@ -21,6 +38,15 @@ Reliability expectations and practices for this project.
   after every step, so a crash leaves a consistent, readable snapshot of progress.
 - If ffmpeg is unavailable, chapters still complete and the book is marked `complete`
   with a note in `book.error`; the master can be assembled later once ffmpeg is present.
+
+## Rollout Safety
+
+- Deploy the API version that enqueues Redis/RQ jobs with
+  `NARRATION_RESUME_SCAN_ENABLED=false`, then remove old API instances that can still
+  start FastAPI `BackgroundTasks`. Enable worker resume scans only after that drain is
+  complete so a new worker cannot resume a book already owned by a legacy renderer.
+- Keep Redis private to the API and worker network and require authenticated
+  `REDIS_URL`; Redis is part of the trusted control plane for queue metadata.
 
 ## Health Checks
 

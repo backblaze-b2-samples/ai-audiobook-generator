@@ -7,6 +7,7 @@
     "dev": "sh scripts/dev.sh",
     "dev:web": "pnpm --filter @ai-audiobook-generator/web dev",
     "dev:api": "cd services/api && .venv/bin/uvicorn main:app --reload --port ${API_PORT:-8000}",
+    "dev:worker": "cd services/api && .venv/bin/python worker.py",
     "build": "pnpm --filter @ai-audiobook-generator/web build",
     "typecheck": "pnpm --filter @ai-audiobook-generator/web typecheck",
     "lint": "pnpm --filter @ai-audiobook-generator/web lint",
