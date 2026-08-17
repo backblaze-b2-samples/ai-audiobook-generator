@@ -5,7 +5,7 @@ Engineering workflows for this repo.
 
 ## Prerequisites
 
-- Node.js >= 20, pnpm >= 9, Python >= 3.11
+- Node.js >= 20.19.0, pnpm >= 9, Python >= 3.11
 - **Redis** reachable at `REDIS_URL` (default `redis://localhost:6379/0`) for the
   durable narration queue.
 - **ffmpeg** on PATH (M4B master assembly). Per-chapter MP3s render without it;

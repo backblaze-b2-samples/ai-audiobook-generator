@@ -91,7 +91,7 @@ docs/
 
 ## Quick Start
 
-You need: Node.js >= 20, pnpm >= 9, Python >= 3.11, **Redis** (for the durable
+You need: Node.js >= 20.19.0, pnpm >= 9, Python >= 3.11, **Redis** (for the durable
 queue), **ffmpeg** (for the M4B master), a free **[Backblaze B2 account](https://www.backblaze.com/sign-up/ai-cloud-storage?utm_source=github&utm_medium=referral&utm_campaign=ai_artifacts&utm_content=b2ai-audiobook-generator)**,
 and a text-to-speech provider key (OpenAI by default).
 
