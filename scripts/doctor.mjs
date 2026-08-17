@@ -22,6 +22,8 @@ const DEFAULT_REDIS_URL = "redis://localhost:6379/0";
 
 // Required minimum versions. Bump as upstream support shifts.
 const REQUIRED_NODE_MAJOR = 20;
+const REQUIRED_NODE_MINOR = 19;
+const REQUIRED_NODE_PATCH = 0;
 const REQUIRED_PNPM_MAJOR = 9;
 const REQUIRED_PYTHON_MINOR = 11; // 3.11+
 
@@ -103,9 +105,14 @@ function parseSemver(s) {
 
 function checkNode() {
   const v = parseSemver(process.version);
-  if (!v || v.major < REQUIRED_NODE_MAJOR) {
+  if (
+    !v ||
+    v.major < REQUIRED_NODE_MAJOR ||
+    (v.major === REQUIRED_NODE_MAJOR && v.minor < REQUIRED_NODE_MINOR) ||
+    (v.major === REQUIRED_NODE_MAJOR && v.minor === REQUIRED_NODE_MINOR && v.patch < REQUIRED_NODE_PATCH)
+  ) {
     fail(
-      `Node ${process.version} is too old (need >= ${REQUIRED_NODE_MAJOR}.0.0)`,
+      `Node ${process.version} is too old (need >= ${REQUIRED_NODE_MAJOR}.${REQUIRED_NODE_MINOR}.${REQUIRED_NODE_PATCH})`,
       `Install a current Node via nvm/fnm: \`nvm install ${REQUIRED_NODE_MAJOR}\``,
     );
   }
